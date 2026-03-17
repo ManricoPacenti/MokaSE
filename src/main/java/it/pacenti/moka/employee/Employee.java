@@ -18,6 +18,7 @@ public class Employee {
     private final LeaveCalendar leaveCalendar;
     private final Priority priority;
 
+    private final int agreedHours;
     private int hourlyCost;
 
     public Employee(
@@ -26,6 +27,7 @@ public class Employee {
             WeeklyAvailability availability,
             LeaveCalendar leaveCalendar,
             Priority priority,
+            int agreedHours,
             int hourlyCost
     ) {
         this.name = Objects.requireNonNull(name);
@@ -34,6 +36,15 @@ public class Employee {
         this.leaveCalendar = Objects.requireNonNull(leaveCalendar);
         this.priority = Objects.requireNonNull(priority);
 
+        if (agreedHours < 0) {
+            throw new IllegalArgumentException("Agreed hours cannot be negative");
+        }
+
+        if (hourlyCost < 0) {
+            throw new IllegalArgumentException("Hourly cost cannot be negative");
+        }
+
+        this.agreedHours = agreedHours;
         this.hourlyCost = hourlyCost;
     }
 
@@ -84,5 +95,9 @@ public class Employee {
         }
 
         return true;
+    }
+
+    public int getAgreedHours(){
+        return agreedHours;
     }
 }
