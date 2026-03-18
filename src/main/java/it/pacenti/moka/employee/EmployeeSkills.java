@@ -17,6 +17,7 @@ public class EmployeeSkills {
      * Creates an empty set of employee skills
      */
     public EmployeeSkills() {
+
         this.skills = new EnumMap<>(Skill.class);
     }
 
@@ -65,6 +66,14 @@ public class EmployeeSkills {
      * Returns all employee skills as an unmodifiable collection
      */
     public Collection<EmployeeSkill> asCollection() {
+
         return Collections.unmodifiableCollection(skills.values());
+    }
+
+    @Override
+    public String toString() {
+        return "EmployeeSkills{" +
+                "skills=" + skills +
+                '}';
     }
 }

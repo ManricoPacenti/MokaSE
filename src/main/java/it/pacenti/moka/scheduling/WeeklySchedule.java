@@ -162,6 +162,29 @@ public class WeeklySchedule {
         return false;
     }
 
+    /**
+     * Returns the total assigned minutes for the given employee on a specific day.
+     */
+    public long getAssignedMinutesFor(Employee employee, DayOfWeek day) {
+        Objects.requireNonNull(employee, "Employee cannot be null");
+        Objects.requireNonNull(day, "Day cannot be null");
+
+        long total = 0;
+        for (Assignment assignment: getAssignmentsFor(employee)) {
+            if (assignment.getSlot().getDay().equals(day)) {
+                total += assignment.getSlot().durationMinutes();
+            }
+        }
+        return total;
+    }
+
+    /**
+     *Returns the total assigned hours for the given employee
+     */
+    public double getAssignedHoursFor(Employee employee, DayOfWeek day) {
+        return getAssignedMinutesFor(employee, day) / 60.0;
+    }
+
     @Override
     public String toString() {
         return "WeeklySchedule{" +

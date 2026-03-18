@@ -52,8 +52,16 @@ public class Employee {
         return name;
     }
 
+    public Priority getPriority() {
+        return priority;
+    }
+
     public EmployeeSkills getSkills() {
         return skills;
+    }
+
+    public Proficiency getProficiency(Skill skill) {
+        return skills.getProficiency(skill);
     }
 
     public boolean hasSkill(Skill skill){

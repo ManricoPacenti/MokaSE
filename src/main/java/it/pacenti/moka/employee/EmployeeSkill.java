@@ -48,4 +48,12 @@ public class EmployeeSkill {
         return this.proficiency.ordinal() > other.proficiency.ordinal();
     }
 
+    @Override
+    public String toString() {
+        return "EmployeeSkill{" +
+                "skill=" + skill +
+                ", proficiency=" + proficiency +
+                '}';
+    }
+
 }
