@@ -8,7 +8,8 @@ import it.pacenti.moka.scheduling.ShiftSlot;
 import java.util.Objects;
 
 /**
- * Represents an employee
+ * Represents an employee.
+ * the protects its own invariants after creation
  */
 public class Employee {
 
@@ -30,11 +31,17 @@ public class Employee {
             int agreedHours,
             int hourlyCost
     ) {
-        this.name = Objects.requireNonNull(name);
-        this.skills = Objects.requireNonNull(skills);
-        this.availability = Objects.requireNonNull(availability);
-        this.leaveCalendar = Objects.requireNonNull(leaveCalendar);
-        this.priority = Objects.requireNonNull(priority);
+        this.name = name.trim();
+        Objects.requireNonNull(name, "Name cannot be null");
+
+        this.skills = Objects.requireNonNull(skills, "Skills cannot be null");
+        this.availability = Objects.requireNonNull(availability, "Availability cannot be null");
+        this.leaveCalendar = Objects.requireNonNull(leaveCalendar, "Leave calendar cannot be null");
+        this.priority = Objects.requireNonNull(priority, "Priority cannot be null");
+
+        if (this.name.isBlank()) {
+            throw new IllegalArgumentException("Name cannot be blank");
+        }
 
         if (agreedHours < 0) {
             throw new IllegalArgumentException("Agreed hours cannot be negative");
@@ -81,14 +88,19 @@ public class Employee {
     }
 
     public void setHourlyCost(int hourlyCost) {
+        if (hourlyCost <0) {
+            throw new IllegalArgumentException("Hourly cost cannot be less than zero");
+        }
         this.hourlyCost = hourlyCost;
     }
+
 
     /**
      * Checks if the employee can potentially be assigned
      * to a given shift slot
      */
     public boolean isAssignableTo(ShiftSlot slot) {
+        Objects.requireNonNull(slot, "Shift slot cannot be null");
 
         if (!hasSkill(slot.getRequiredSkill())) {
             return false;

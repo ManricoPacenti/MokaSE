@@ -7,5 +7,5 @@ package it.pacenti.moka.employee;
 public enum Proficiency {
     LOW,
     MID,
-    HIG
+    HIGH
 }
