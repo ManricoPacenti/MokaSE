@@ -1,12 +1,12 @@
 package it.pacenti.moka.scheduling;
 
 import it.pacenti.moka.employee.Employee;
-import it.pacenti.moka.employee.EmployeeSkill;
 import it.pacenti.moka.employee.Priority;
 import it.pacenti.moka.employee.Proficiency;
 import it.pacenti.moka.employee.Skill;
 
 import java.time.DayOfWeek;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -21,10 +21,10 @@ import java.util.logging.Logger;
 public class ShiftScheduler {
 
     private static final Logger LOGGER = Logger.getLogger(ShiftScheduler.class.getName());
-    private static final int MAX_DAILY_MINUTES = 8*60;
+    private static final int MAX_DAILY_MINUTES = 8 * 60;
 
     /**
-     * Generates the final weekly schedule starting from a template
+     * Generates the final weekly schedule starting from a template.
      *
      * @param template the weekly schedule template
      * @param employees the employees available for scheduling
@@ -49,10 +49,10 @@ public class ShiftScheduler {
 
     /**
      * Sorts slots according to the business priority of days
-     * and then by start time
+     * and then by start time.
      */
     public List<ShiftSlot> sortSlots(List<ShiftSlot> slots) {
-        Objects.requireNonNull(slots, "slots cannot be null");
+        Objects.requireNonNull(slots, "Slots cannot be null");
 
         List<ShiftSlot> ordered = new ArrayList<>(slots);
 
@@ -86,24 +86,25 @@ public class ShiftScheduler {
             Employee employee = selected.get();
             schedule.assign(slot, employee);
             applyOpeningRule(slot, employee, schedule);
-            LOGGER.info("Assigned " + employee.getName() + "to slot " + slot);
+            LOGGER.info("Assigned " + employee.getName() + " to slot " + slot);
         } else {
             LOGGER.warning("No employee selected for slot: " + slot);
         }
     }
 
     /**
-     * Returns all employees that can legally be assigned to the given slot
+     * Returns all employees that can legally be assigned to the given slot.
      */
     public List<Employee> findEligibleEmployees(ShiftSlot slot, WeeklySchedule schedule, List<Employee> employees) {
         Objects.requireNonNull(slot, "ShiftSlot cannot be null");
         Objects.requireNonNull(schedule, "WeeklySchedule cannot be null");
         Objects.requireNonNull(employees, "Employees cannot be null");
 
-        List<Employee> eligibile = new ArrayList<>();
+        List<Employee> eligible = new ArrayList<>();
+        LocalDate slotDate = schedule.getDateFor(slot);
 
         for (Employee employee : employees) {
-            if (!employee.isAssignableTo(slot)) {
+            if (!employee.isAssignableTo(slot, slotDate)) {
                 continue;
             }
 
@@ -111,7 +112,7 @@ public class ShiftScheduler {
                 continue;
             }
 
-            if (schedule.getRemainingHours(employee) < slot.durationMinutes() /60.0) {
+            if (schedule.getRemainingHours(employee) < slot.durationMinutes() / 60.0) {
                 continue;
             }
 
@@ -120,21 +121,22 @@ public class ShiftScheduler {
                 continue;
             }
 
-            eligibile.add(employee);
+            eligible.add(employee);
         }
-        return eligibile;
+
+        return eligible;
     }
 
     /**
-     * Selects the bes employee among the eligible candidates.
+     * Selects the best employee among the eligible candidates.
      * PRIORITY ORDER:
-     * 1. SKILL proficiency
-     * 2. EMPLOYEE priority
-     * 3. REMAINING weekly hours
+     * 1. Skill proficiency
+     * 2. Employee priority
+     * 3. Remaining weekly hours
      */
-    public Optional<Employee> selectBestEmployee(ShiftSlot slot, List<Employee> candidates, WeeklySchedule schedule){
+    public Optional<Employee> selectBestEmployee(ShiftSlot slot, List<Employee> candidates, WeeklySchedule schedule) {
         Objects.requireNonNull(slot, "ShiftSlot cannot be null");
-        Objects.requireNonNull(candidates, "candidates cannot be null");
+        Objects.requireNonNull(candidates, "Candidates cannot be null");
         Objects.requireNonNull(schedule, "WeeklySchedule cannot be null");
 
         return candidates.stream()
@@ -148,8 +150,8 @@ public class ShiftScheduler {
 
     /**
      * Applies the OPENING business rule:
-     * if the assigned slot is OPENING and the selected employee also has BAR
-     * then parallel BAR slots can be changed to WAITER
+     * if the assigned slot is OPENING and the selected employee also has BAR,
+     * then parallel BAR slots can be changed to WAITER.
      */
     public void applyOpeningRule(ShiftSlot assignedSlot, Employee assignedEmployee, WeeklySchedule schedule) {
         Objects.requireNonNull(assignedSlot, "Assigned slot cannot be null");
@@ -168,6 +170,7 @@ public class ShiftScheduler {
             if (slot == assignedSlot) {
                 continue;
             }
+
             if (slot.getRequiredSkill() == Skill.BAR && slot.sameMomentAs(assignedSlot)) {
                 slot.setRequiredSkill(Skill.WAITER);
             }
@@ -175,7 +178,7 @@ public class ShiftScheduler {
     }
 
     private int getDayPriority(DayOfWeek day) {
-        return switch(day) {
+        return switch (day) {
             case SATURDAY -> 1;
             case SUNDAY -> 2;
             case FRIDAY -> 3;
@@ -188,7 +191,7 @@ public class ShiftScheduler {
 
     private int getProficiencyScore(Employee employee, Skill skill) {
         Proficiency proficiency = employee.getSkills().getProficiency(skill);
-        return proficiency != null? proficiency.ordinal(): -1;
+        return proficiency != null ? proficiency.ordinal() : -1;
     }
 
     private int getPriorityScore(Priority priority) {

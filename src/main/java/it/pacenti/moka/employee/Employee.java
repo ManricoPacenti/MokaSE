@@ -5,6 +5,7 @@ import it.pacenti.moka.availability.LeaveCalendar;
 import it.pacenti.moka.availability.WeeklyAvailability;
 import it.pacenti.moka.scheduling.ShiftSlot;
 
+import java.time.LocalDate;
 import java.util.Objects;
 
 /**
@@ -104,19 +105,24 @@ public class Employee {
 
     /**
      * Checks if the employee can potentially be assigned
-     * to a given shift slot.
+     * to a given shift slot on a specific date.
      */
-    public boolean isAssignableTo(ShiftSlot slot) {
+    public boolean isAssignableTo(ShiftSlot slot, LocalDate slotDate) {
         Objects.requireNonNull(slot, "Shift slot cannot be null");
+        Objects.requireNonNull(slotDate, "Slot date cannot be null");
 
         if (!hasSkill(slot.getRequiredSkill())) {
             return false;
         }
 
-        if (!availability.isAvailable(slot)) {
+        if (!availability.isAvailable(slot.getDay(), slot.getRange())) {
             return false;
         }
 
-        return !leaveCalendar.isOnLeave(slot);
+        if (leaveCalendar.isOnLeave(slotDate, slot.getRange())) {
+            return false;
+        }
+
+        return true;
     }
 }

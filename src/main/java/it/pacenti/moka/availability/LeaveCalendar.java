@@ -1,6 +1,5 @@
 package it.pacenti.moka.availability;
 
-import it.pacenti.moka.scheduling.ShiftSlot;
 import it.pacenti.moka.scheduling.TimeRange;
 
 import java.time.LocalDate;
@@ -10,7 +9,7 @@ import java.util.List;
 import java.util.Objects;
 
 /**
- * Stores all approved leaves for an employee
+ * Stores all approved leaves for an employee.
  */
 public class LeaveCalendar {
 
@@ -24,28 +23,24 @@ public class LeaveCalendar {
         Objects.requireNonNull(leave, "Leave cannot be null");
 
         for (Leave existing : leaves) {
-            if(existing.overlaps(leave.getDate(), leave.getRange())) {
+            if (existing.overlaps(leave.getDate(), leave.getRange())) {
                 throw new IllegalArgumentException("Overlapping leave is not allowed");
             }
         }
+
         leaves.add(leave);
     }
 
     public boolean isOnLeave(LocalDate date, TimeRange range) {
         Objects.requireNonNull(date, "Date cannot be null");
-        Objects.requireNonNull(range, "TimeRange cannot be null");
+        Objects.requireNonNull(range, "Time range cannot be null");
 
         for (Leave leave : leaves) {
-            if(leave.overlaps(date, range)) {
+            if (leave.overlaps(date, range)) {
                 return true;
             }
         }
-        return false;
-    }
 
-    //Follow an helper for the current scheduling model.
-    public boolean isOnLeave(ShiftSlot slot) {
-        Objects.requireNonNull(slot, "ShiftSlot cannot be null");
         return false;
     }
 
@@ -57,6 +52,6 @@ public class LeaveCalendar {
     public String toString() {
         return "LeaveCalendar{" +
                 "leaves=" + leaves +
-                "}";
+                '}';
     }
 }

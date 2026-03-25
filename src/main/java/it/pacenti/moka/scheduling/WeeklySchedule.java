@@ -185,6 +185,14 @@ public class WeeklySchedule {
         return getAssignedMinutesFor(employee, day) / 60.0;
     }
 
+    /**
+     * Turns weekStart in a real date
+     */
+    public LocalDate getDateFor(ShiftSlot slot) {
+        Objects.requireNonNull(slot, "Shift slot cannot be null");
+        return weekStart.plusDays(slot.getDay().getValue() -1L);
+    }
+
     @Override
     public String toString() {
         return "WeeklySchedule{" +
