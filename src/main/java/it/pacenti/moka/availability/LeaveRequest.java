@@ -5,7 +5,7 @@ import it.pacenti.moka.employee.Employee;
 import java.util.Objects;
 
 /**
- * Represents a leave request submitted by an employee
+ * Represents a leave request submitted by an employee.
  */
 public class LeaveRequest {
 
@@ -14,10 +14,13 @@ public class LeaveRequest {
     private final Leave leave;
     private RequestStatus status;
 
-;
     public LeaveRequest(int id, Employee employee, Leave leave) {
+        if (id <= 0) {
+            throw new IllegalArgumentException("Request id must be greater than zero");
+        }
+
         this.id = id;
-        this.employee = Objects.requireNonNull(employee, "Employee cannot be null")
+        this.employee = Objects.requireNonNull(employee, "Employee cannot be null");
         this.leave = Objects.requireNonNull(leave, "Leave cannot be null");
         this.status = RequestStatus.PENDING;
     }
@@ -39,11 +42,19 @@ public class LeaveRequest {
     }
 
     public void approve() {
+        ensurePending();
         this.status = RequestStatus.APPROVED;
     }
 
     public void reject() {
+        ensurePending();
         this.status = RequestStatus.REJECTED;
+    }
+
+    private void ensurePending() {
+        if (status != RequestStatus.PENDING) {
+            throw new IllegalStateException("Only pending requests can change status");
+        }
     }
 
     @Override
@@ -55,5 +66,4 @@ public class LeaveRequest {
                 ", status=" + status +
                 '}';
     }
-
 }
