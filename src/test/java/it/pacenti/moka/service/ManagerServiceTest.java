@@ -7,6 +7,12 @@ import it.pacenti.moka.availability.RequestStatus;
 import it.pacenti.moka.employee.Employee;
 import it.pacenti.moka.employee.EmployeeFactory;
 import it.pacenti.moka.employee.Priority;
+import it.pacenti.moka.exception.DuplicateEmployeeException;
+import it.pacenti.moka.exception.EmployeeNotFoundException;
+import it.pacenti.moka.exception.InvalidLeaveRequestStateException;
+import it.pacenti.moka.exception.LeaveRequestNotFoundException;
+import it.pacenti.moka.exception.TemplateNotInitializedException;
+import it.pacenti.moka.exception.UnmanagedEmployeeException;
 import it.pacenti.moka.repository.EmployeeRepository;
 import it.pacenti.moka.repository.InMemoryEmployeeRepository;
 import it.pacenti.moka.scheduling.ShiftScheduler;
@@ -41,6 +47,29 @@ class ManagerServiceTest {
     }
 
     @Test
+    void shouldCreateEmployee() {
+        Employee employee = managerService.createEmployee("Mario", Priority.MEDIUM, 40, 12);
+
+        assertNotNull(employee);
+        assertEquals("Mario", employee.getName());
+        assertTrue(managerService.findEmployeeByName("Mario").isPresent());
+    }
+
+    @Test
+    void shouldThrowWhenCreatingDuplicateEmployee() {
+        managerService.createEmployee("Mario", Priority.MEDIUM, 40, 12);
+
+        assertThrows(DuplicateEmployeeException.class,
+                () -> managerService.createEmployee("Mario", Priority.HIGH, 30, 15));
+    }
+
+    @Test
+    void shouldThrowWhenEmployeeNotFound() {
+        assertThrows(EmployeeNotFoundException.class,
+                () -> managerService.getEmployeeByName("Ghost"));
+    }
+
+    @Test
     void shouldSubmitPendingLeaveRequest() {
         Employee employee = managerService.createEmployee("Mario", Priority.MEDIUM, 40, 12);
 
@@ -64,7 +93,7 @@ class ManagerServiceTest {
     }
 
     @Test
-    void shouldThrowWhenSubmittingLeaveRequestForUnmanagedEmployee() {
+    void shouldThrowWhenSubmittingLeaveRequestForUnknownEmployee() {
         Employee unmanagedEmployee = employeeFactory.createEmployee("Luigi", Priority.LOW, 30, 10);
 
         Leave leave = new Leave(
@@ -74,7 +103,7 @@ class ManagerServiceTest {
                 "Personal appointment"
         );
 
-        assertThrows(IllegalArgumentException.class,
+        assertThrows(EmployeeNotFoundException.class,
                 () -> managerService.submitLeaveRequest(unmanagedEmployee, leave));
     }
 
@@ -120,13 +149,13 @@ class ManagerServiceTest {
 
     @Test
     void shouldThrowWhenApprovingUnknownRequest() {
-        assertThrows(IllegalArgumentException.class,
+        assertThrows(LeaveRequestNotFoundException.class,
                 () -> managerService.approveLeaveRequest(999));
     }
 
     @Test
     void shouldThrowWhenRejectingUnknownRequest() {
-        assertThrows(IllegalArgumentException.class,
+        assertThrows(LeaveRequestNotFoundException.class,
                 () -> managerService.rejectLeaveRequest(999));
     }
 
@@ -144,7 +173,7 @@ class ManagerServiceTest {
         LeaveRequest request = managerService.submitLeaveRequest(employee, leave);
         managerService.approveLeaveRequest(request.getId());
 
-        assertThrows(IllegalStateException.class,
+        assertThrows(InvalidLeaveRequestStateException.class,
                 () -> managerService.approveLeaveRequest(request.getId()));
     }
 
@@ -162,7 +191,7 @@ class ManagerServiceTest {
         LeaveRequest request = managerService.submitLeaveRequest(employee, leave);
         managerService.rejectLeaveRequest(request.getId());
 
-        assertThrows(IllegalStateException.class,
+        assertThrows(InvalidLeaveRequestStateException.class,
                 () -> managerService.rejectLeaveRequest(request.getId()));
     }
 
@@ -180,7 +209,7 @@ class ManagerServiceTest {
         LeaveRequest request = managerService.submitLeaveRequest(employee, leave);
         managerService.approveLeaveRequest(request.getId());
 
-        assertThrows(IllegalStateException.class,
+        assertThrows(InvalidLeaveRequestStateException.class,
                 () -> managerService.rejectLeaveRequest(request.getId()));
     }
 
@@ -205,11 +234,6 @@ class ManagerServiceTest {
 
         LeaveRequest request = managerService.submitLeaveRequest(employee, conflictingLeave);
 
-        /*
-         * Questo test è corretto SOLO se LeaveCalendar.addLeave(...)
-         * rifiuta leave sovrapposti con una IllegalArgumentException
-         * (o altra eccezione coerente).
-         */
         assertThrows(IllegalArgumentException.class,
                 () -> managerService.approveLeaveRequest(request.getId()));
 
@@ -257,5 +281,11 @@ class ManagerServiceTest {
         assertTrue(pendingRequests.contains(request3));
         assertFalse(pendingRequests.contains(request1));
         assertFalse(pendingRequests.contains(request2));
+    }
+
+    @Test
+    void shouldThrowWhenGeneratingScheduleWithoutTemplate() {
+        assertThrows(TemplateNotInitializedException.class,
+                () -> managerService.generateSchedule());
     }
 }
