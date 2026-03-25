@@ -21,7 +21,14 @@ public class LeaveCalendar {
     }
 
     public void addLeave(Leave leave) {
-        leaves.add(Objects.requireNonNull(leave, "Leave cannot be null"));
+        Objects.requireNonNull(leave, "Leave cannot be null");
+
+        for (Leave existing : leaves) {
+            if(existing.overlaps(leave.getDate(), leave.getRange())) {
+                throw new IllegalArgumentException("Overlapping leave is not allowed");
+            }
+        }
+        leaves.add(leave);
     }
 
     public boolean isOnLeave(LocalDate date, TimeRange range) {

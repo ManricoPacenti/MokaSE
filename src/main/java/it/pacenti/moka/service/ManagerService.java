@@ -60,11 +60,16 @@ public class ManagerService {
         Objects.requireNonNull(name, "Name cannot be null");
         Objects.requireNonNull(priority, "Priority cannot be null");
 
-        if (employeeRepository.existsByName(name)) {
-            throw new IllegalArgumentException("An employee with this name already exists: " + name.trim());
+        String normalizedName = name.trim();
+        if (normalizedName.isBlank()) {
+            throw new IllegalArgumentException("Name cannot be blank");
         }
 
-        Employee employee = employeeFactory.createEmployee(name, priority, agreedHours, hourlyCost);
+        if (employeeRepository.existsByName(normalizedName)) {
+            throw new IllegalArgumentException("An employee with this name already exists: " + normalizedName);
+        }
+
+        Employee employee = employeeFactory.createEmployee(normalizedName, priority, agreedHours, hourlyCost);
         employeeRepository.save(employee);
 
         LOGGER.info("Created employee: " + employee.getName());
@@ -97,7 +102,7 @@ public class ManagerService {
         Employee managedEmployee = requireManagedEmployee(employee);
         Objects.requireNonNull(leave, "Leave cannot be null");
 
-        managedEmployee.getLeaveCalendar().addLeave(leave);
+        managedEmployee.addLeave(leave);
         employeeRepository.save(managedEmployee);
 
         LOGGER.info("Added leave for " + managedEmployee.getName());
@@ -181,44 +186,35 @@ public class ManagerService {
         return Collections.unmodifiableList(result);
     }
 
-    public boolean approveLeaveRequest(int requestId) {
-        Optional<LeaveRequest> requestOpt = findLeaveRequestById(requestId);
+    public List<LeaveRequest> getAllLeaveRequests() {
+        return Collections.unmodifiableList(new ArrayList<>(leaveRequests));
+    }
 
-        if (requestOpt.isEmpty()) {
-            return false;
-        }
-
-        LeaveRequest request = requestOpt.get();
+    public void approveLeaveRequest(int requestId) {
+        LeaveRequest request = getLeaveRequestById(requestId);
 
         if (request.getStatus() != RequestStatus.PENDING) {
-            return false;
+            throw new IllegalStateException("Leave request is not pending: " + requestId);
         }
 
+        request.getEmployee().addLeave(request.getLeave());
         request.approve();
-        request.getEmployee().getLeaveCalendar().addLeave(request.getLeave());
+
         employeeRepository.save(request.getEmployee());
 
         LOGGER.info("Approved leave request n° " + requestId);
-        return true;
     }
 
-    public boolean rejectLeaveRequest(int requestId) {
-        Optional<LeaveRequest> requestOpt = findLeaveRequestById(requestId);
-
-        if (requestOpt.isEmpty()) {
-            return false;
-        }
-
-        LeaveRequest request = requestOpt.get();
+    public void rejectLeaveRequest(int requestId) {
+        LeaveRequest request = getLeaveRequestById(requestId);
 
         if (request.getStatus() != RequestStatus.PENDING) {
-            return false;
+            throw new IllegalStateException("Leave request is not pending: " + requestId);
         }
 
         request.reject();
 
         LOGGER.info("Rejected leave request n° " + requestId);
-        return true;
     }
 
     /**
@@ -259,6 +255,11 @@ public class ManagerService {
 
         schedule.assign(slot, managedEmployee);
         LOGGER.info("Force-assigned " + managedEmployee.getName() + " to slot " + slot);
+    }
+
+    private LeaveRequest getLeaveRequestById(int requestId) {
+        return findLeaveRequestById(requestId)
+                .orElseThrow(() -> new IllegalArgumentException("Leave request not found: " + requestId));
     }
 
     private Optional<LeaveRequest> findLeaveRequestById(int requestId) {
