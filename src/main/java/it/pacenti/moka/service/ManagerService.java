@@ -189,6 +189,14 @@ public class ManagerService {
         LOGGER.info("Added slot to template: " + slot);
     }
 
+    public void addTemplateSlot(DayOfWeek day, TimeRange range, Skill requiredSkill) {
+        Objects.requireNonNull(day, "Day cannot be null");
+        Objects.requireNonNull(range, "Time range cannot be null");
+        Objects.requireNonNull(requiredSkill, "Required skill cannot be null");
+
+        addTemplateSlot(new ShiftSlot(day, range, requiredSkill));
+    }
+
     public boolean removeTemplateSlot(ShiftSlot slot) {
         ensureTemplateExists();
         Objects.requireNonNull(slot, "Slot cannot be null");
@@ -199,6 +207,14 @@ public class ManagerService {
         }
 
         return removed;
+    }
+
+    public boolean removeTemplateSlot(DayOfWeek day, TimeRange range, Skill requiredSkill) {
+        Objects.requireNonNull(day, "Day cannot be null");
+        Objects.requireNonNull(range, "Time range cannot be null");
+        Objects.requireNonNull(requiredSkill, "Required skill cannot be null");
+
+        return removeTemplateSlot(new ShiftSlot(day, range, requiredSkill));
     }
 
     // =========================================================
