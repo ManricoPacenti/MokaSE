@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Optional;
 
 public interface LeaveRequestRepository {
+
     LeaveRequest save(LeaveRequest request);
 
     Optional<LeaveRequest> findById(int id);
@@ -13,4 +14,6 @@ public interface LeaveRequestRepository {
     List<LeaveRequest> findAll();
 
     List<LeaveRequest> findPending();
+
+    int nextId();
 }

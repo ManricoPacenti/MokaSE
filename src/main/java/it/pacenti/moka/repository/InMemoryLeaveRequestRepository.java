@@ -3,11 +3,22 @@ package it.pacenti.moka.repository;
 import it.pacenti.moka.availability.LeaveRequest;
 import it.pacenti.moka.availability.RequestStatus;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
 
 public class InMemoryLeaveRequestRepository implements LeaveRequestRepository {
 
-    private final Map<Integer, LeaveRequest> requestsById = new HashMap<>();
+    private final Map<Integer, LeaveRequest> requestsById;
+    private int nextId;
+
+    public InMemoryLeaveRequestRepository() {
+        this.requestsById = new HashMap<>();
+        this.nextId = 1;
+    }
 
     @Override
     public LeaveRequest save(LeaveRequest request) {
@@ -29,11 +40,18 @@ public class InMemoryLeaveRequestRepository implements LeaveRequestRepository {
     @Override
     public List<LeaveRequest> findPending() {
         List<LeaveRequest> pending = new ArrayList<>();
+
         for (LeaveRequest request : requestsById.values()) {
             if (request.getStatus() == RequestStatus.PENDING) {
                 pending.add(request);
             }
         }
+
         return pending;
+    }
+
+    @Override
+    public int nextId() {
+        return nextId++;
     }
 }

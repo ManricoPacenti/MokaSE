@@ -12,9 +12,10 @@ import it.pacenti.moka.exception.EmployeeNotFoundException;
 import it.pacenti.moka.exception.InvalidLeaveRequestStateException;
 import it.pacenti.moka.exception.LeaveRequestNotFoundException;
 import it.pacenti.moka.exception.TemplateNotInitializedException;
-import it.pacenti.moka.exception.UnmanagedEmployeeException;
 import it.pacenti.moka.repository.EmployeeRepository;
 import it.pacenti.moka.repository.InMemoryEmployeeRepository;
+import it.pacenti.moka.repository.InMemoryLeaveRequestRepository;
+import it.pacenti.moka.repository.LeaveRequestRepository;
 import it.pacenti.moka.scheduling.ShiftScheduler;
 import it.pacenti.moka.scheduling.TimeRange;
 import org.junit.jupiter.api.BeforeEach;
@@ -29,6 +30,7 @@ import static org.junit.jupiter.api.Assertions.*;
 class ManagerServiceTest {
 
     private EmployeeRepository employeeRepository;
+    private LeaveRequestRepository leaveRequestRepository;
     private EmployeeFactory employeeFactory;
     private ShiftScheduler scheduler;
     private ManagerService managerService;
@@ -36,11 +38,13 @@ class ManagerServiceTest {
     @BeforeEach
     void setUp() {
         employeeRepository = new InMemoryEmployeeRepository();
+        leaveRequestRepository = new InMemoryLeaveRequestRepository();
         employeeFactory = new EmployeeFactory();
         scheduler = new ShiftScheduler();
 
         managerService = new ManagerService(
                 employeeRepository,
+                leaveRequestRepository,
                 employeeFactory,
                 scheduler
         );

@@ -8,19 +8,19 @@ import it.pacenti.moka.employee.EmployeeFactory;
 import it.pacenti.moka.employee.Priority;
 import it.pacenti.moka.employee.Proficiency;
 import it.pacenti.moka.employee.Skill;
-import it.pacenti.moka.repository.EmployeeRepository;
-import it.pacenti.moka.scheduling.ShiftScheduler;
-import it.pacenti.moka.scheduling.ShiftSlot;
-import it.pacenti.moka.scheduling.TimeRange;
-import it.pacenti.moka.scheduling.WeeklySchedule;
-import it.pacenti.moka.scheduling.WeeklyScheduleTemplate;
-
 import it.pacenti.moka.exception.DuplicateEmployeeException;
 import it.pacenti.moka.exception.EmployeeNotFoundException;
 import it.pacenti.moka.exception.InvalidLeaveRequestStateException;
 import it.pacenti.moka.exception.LeaveRequestNotFoundException;
 import it.pacenti.moka.exception.TemplateNotInitializedException;
 import it.pacenti.moka.exception.UnmanagedEmployeeException;
+import it.pacenti.moka.repository.EmployeeRepository;
+import it.pacenti.moka.repository.LeaveRequestRepository;
+import it.pacenti.moka.scheduling.ShiftScheduler;
+import it.pacenti.moka.scheduling.ShiftSlot;
+import it.pacenti.moka.scheduling.TimeRange;
+import it.pacenti.moka.scheduling.WeeklySchedule;
+import it.pacenti.moka.scheduling.WeeklyScheduleTemplate;
 
 import java.time.DayOfWeek;
 import java.time.LocalDate;
@@ -34,7 +34,7 @@ import java.util.logging.Logger;
 /**
  * Application service that exposes the operations available to the manager.
  * It orchestrates application use cases and delegates business rules
- * to domain objects and specialized services.
+ * to domain objects, repositories, and specialized services.
  */
 public class ManagerService {
 
@@ -42,24 +42,22 @@ public class ManagerService {
     private static final int MAX_DAILY_MINUTES = 8 * 60;
 
     private final EmployeeRepository employeeRepository;
+    private final LeaveRequestRepository leaveRequestRepository;
     private final EmployeeFactory employeeFactory;
     private final ShiftScheduler scheduler;
 
-    /**
-     * Temporary in-memory storage for leave requests.
-     * This can later be extracted into a dedicated LeaveRequestRepository.
-     */
-    private final List<LeaveRequest> leaveRequests;
-
     private WeeklyScheduleTemplate template;
     private WeeklySchedule currentSchedule;
-    private int nextLeaveRequestId;
 
     public ManagerService(EmployeeRepository employeeRepository,
+                          LeaveRequestRepository leaveRequestRepository,
                           EmployeeFactory employeeFactory,
                           ShiftScheduler scheduler) {
         this.employeeRepository = Objects.requireNonNull(
                 employeeRepository, "Employee repository cannot be null"
+        );
+        this.leaveRequestRepository = Objects.requireNonNull(
+                leaveRequestRepository, "Leave request repository cannot be null"
         );
         this.employeeFactory = Objects.requireNonNull(
                 employeeFactory, "Employee factory cannot be null"
@@ -67,9 +65,6 @@ public class ManagerService {
         this.scheduler = Objects.requireNonNull(
                 scheduler, "Scheduler cannot be null"
         );
-
-        this.leaveRequests = new ArrayList<>();
-        this.nextLeaveRequestId = 1;
     }
 
     // =========================================================
@@ -111,10 +106,10 @@ public class ManagerService {
     public Employee getEmployeeByName(String name) {
         Objects.requireNonNull(name, "Name cannot be null");
 
-        String normalizeName = normalizeName(name);
+        String normalizedName = normalizeName(name);
 
-        return employeeRepository.findByName(normalizeName)
-                .orElseThrow(() -> new EmployeeNotFoundException(normalizeName));
+        return employeeRepository.findByName(normalizedName)
+                .orElseThrow(() -> new EmployeeNotFoundException(normalizedName));
     }
 
     public void addSkill(String employeeName, Skill skill, Proficiency proficiency) {
@@ -128,9 +123,6 @@ public class ManagerService {
         LOGGER.info("Added/updated skill " + skill + " for employee " + employee.getName());
     }
 
-    /**
-     * Convenience overload if the caller already has the employee reference.
-     */
     public void addSkill(Employee employee, Skill skill, Proficiency proficiency) {
         Objects.requireNonNull(employee, "Employee cannot be null");
         addSkill(employee.getName(), skill, proficiency);
@@ -148,9 +140,6 @@ public class ManagerService {
                 + " on " + day + " during " + range);
     }
 
-    /**
-     * Convenience overload if the caller already has the employee reference.
-     */
     public void addUnavailability(Employee employee, DayOfWeek day, TimeRange range) {
         Objects.requireNonNull(employee, "Employee cannot be null");
         addUnavailability(employee.getName(), day, range);
@@ -166,9 +155,6 @@ public class ManagerService {
         LOGGER.info("Added leave for " + employee.getName());
     }
 
-    /**
-     * Convenience overload if the caller already has the employee reference.
-     */
     public void addLeave(Employee employee, Leave leave) {
         Objects.requireNonNull(employee, "Employee cannot be null");
         addLeave(employee.getName(), leave);
@@ -246,8 +232,13 @@ public class ManagerService {
         Employee employee = getEmployeeByName(employeeName);
         Objects.requireNonNull(leave, "Leave cannot be null");
 
-        LeaveRequest request = new LeaveRequest(nextLeaveRequestId++, employee, leave);
-        leaveRequests.add(request);
+        LeaveRequest request = new LeaveRequest(
+                leaveRequestRepository.nextId(),
+                employee,
+                leave
+        );
+
+        leaveRequestRepository.save(request);
 
         LOGGER.info("Leave request submitted by " + employee.getName()
                 + " with request id " + request.getId());
@@ -255,28 +246,17 @@ public class ManagerService {
         return request;
     }
 
-    /**
-     * Convenience overload if the caller already has the employee reference.
-     */
     public LeaveRequest submitLeaveRequest(Employee employee, Leave leave) {
         Objects.requireNonNull(employee, "Employee cannot be null");
         return submitLeaveRequest(employee.getName(), leave);
     }
 
     public List<LeaveRequest> getPendingRequests() {
-        List<LeaveRequest> pending = new ArrayList<>();
-
-        for (LeaveRequest request : leaveRequests) {
-            if (request.getStatus() == RequestStatus.PENDING) {
-                pending.add(request);
-            }
-        }
-
-        return Collections.unmodifiableList(pending);
+        return Collections.unmodifiableList(new ArrayList<>(leaveRequestRepository.findPending()));
     }
 
     public List<LeaveRequest> getAllLeaveRequests() {
-        return Collections.unmodifiableList(new ArrayList<>(leaveRequests));
+        return Collections.unmodifiableList(new ArrayList<>(leaveRequestRepository.findAll()));
     }
 
     public void approveLeaveRequest(int requestId) {
@@ -287,6 +267,7 @@ public class ManagerService {
         request.approve();
 
         employeeRepository.save(employee);
+        leaveRequestRepository.save(request);
 
         LOGGER.info("Approved leave request n° " + requestId
                 + " for employee " + employee.getName());
@@ -295,6 +276,8 @@ public class ManagerService {
     public void rejectLeaveRequest(int requestId) {
         LeaveRequest request = getPendingLeaveRequestById(requestId);
         request.reject();
+
+        leaveRequestRepository.save(request);
 
         LOGGER.info("Rejected leave request n° " + requestId
                 + " for employee " + request.getEmployee().getName());
@@ -366,24 +349,17 @@ public class ManagerService {
     }
 
     private LeaveRequest getLeaveRequestById(int requestId) {
-        return findLeaveRequestById(requestId)
+        return leaveRequestRepository.findById(requestId)
                 .orElseThrow(() -> new LeaveRequestNotFoundException(requestId));
-    }
-
-    private Optional<LeaveRequest> findLeaveRequestById(int requestId) {
-        for (LeaveRequest request : leaveRequests) {
-            if (request.getId() == requestId) {
-                return Optional.of(request);
-            }
-        }
-        return Optional.empty();
     }
 
     private Employee requireManagedEmployee(Employee employee) {
         Objects.requireNonNull(employee, "Employee cannot be null");
 
-        return employeeRepository.findByName(employee.getName())
-                .orElseThrow(() -> new UnmanagedEmployeeException(employee.getName()));
+        String normalizedName = normalizeName(employee.getName());
+
+        return employeeRepository.findByName(normalizedName)
+                .orElseThrow(() -> new UnmanagedEmployeeException(normalizedName));
     }
 
     private void ensureTemplateExists() {
