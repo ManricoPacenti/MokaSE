@@ -15,6 +15,13 @@ import it.pacenti.moka.scheduling.TimeRange;
 import it.pacenti.moka.scheduling.WeeklySchedule;
 import it.pacenti.moka.scheduling.WeeklyScheduleTemplate;
 
+import it.pacenti.moka.exception.DuplicateEmployeeException;
+import it.pacenti.moka.exception.EmployeeNotFoundException;
+import it.pacenti.moka.exception.InvalidLeaveRequestStateException;
+import it.pacenti.moka.exception.LeaveRequestNotFoundException;
+import it.pacenti.moka.exception.TemplateNotInitializedException;
+import it.pacenti.moka.exception.UnmanagedEmployeeException;
+
 import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.util.ArrayList;
@@ -25,94 +32,159 @@ import java.util.Optional;
 import java.util.logging.Logger;
 
 /**
- * Application service exposing the operations available to the manager.
- * It orchestrates use cases and delegates domain-specific logic
- * to domain objects, repositories, and specialized services.
+ * Application service that exposes the operations available to the manager.
+ * It orchestrates application use cases and delegates business rules
+ * to domain objects and specialized services.
  */
 public class ManagerService {
 
     private static final Logger LOGGER = Logger.getLogger(ManagerService.class.getName());
+    private static final int MAX_DAILY_MINUTES = 8 * 60;
 
     private final EmployeeRepository employeeRepository;
     private final EmployeeFactory employeeFactory;
     private final ShiftScheduler scheduler;
 
+    /**
+     * Temporary in-memory storage for leave requests.
+     * This can later be extracted into a dedicated LeaveRequestRepository.
+     */
     private final List<LeaveRequest> leaveRequests;
 
     private WeeklyScheduleTemplate template;
     private WeeklySchedule currentSchedule;
     private int nextLeaveRequestId;
 
-    public ManagerService(
-            EmployeeRepository employeeRepository,
-            EmployeeFactory employeeFactory,
-            ShiftScheduler scheduler
-    ) {
-        this.employeeRepository = Objects.requireNonNull(employeeRepository, "Employee repository cannot be null");
-        this.employeeFactory = Objects.requireNonNull(employeeFactory, "Employee factory cannot be null");
-        this.scheduler = Objects.requireNonNull(scheduler, "Scheduler cannot be null");
+    public ManagerService(EmployeeRepository employeeRepository,
+                          EmployeeFactory employeeFactory,
+                          ShiftScheduler scheduler) {
+        this.employeeRepository = Objects.requireNonNull(
+                employeeRepository, "Employee repository cannot be null"
+        );
+        this.employeeFactory = Objects.requireNonNull(
+                employeeFactory, "Employee factory cannot be null"
+        );
+        this.scheduler = Objects.requireNonNull(
+                scheduler, "Scheduler cannot be null"
+        );
 
         this.leaveRequests = new ArrayList<>();
         this.nextLeaveRequestId = 1;
     }
 
+    // =========================================================
+    // EMPLOYEE MANAGEMENT
+    // =========================================================
+
     public Employee createEmployee(String name, Priority priority, int agreedHours, int hourlyCost) {
         Objects.requireNonNull(name, "Name cannot be null");
         Objects.requireNonNull(priority, "Priority cannot be null");
 
-        String normalizedName = name.trim();
-        if (normalizedName.isBlank()) {
-            throw new IllegalArgumentException("Name cannot be blank");
-        }
+        String normalizedName = normalizeName(name);
 
         if (employeeRepository.existsByName(normalizedName)) {
-            throw new IllegalArgumentException("An employee with this name already exists: " + normalizedName);
+            throw new DuplicateEmployeeException(normalizedName);
         }
 
-        Employee employee = employeeFactory.createEmployee(normalizedName, priority, agreedHours, hourlyCost);
-        employeeRepository.save(employee);
+        Employee employee = employeeFactory.createEmployee(
+                normalizedName,
+                priority,
+                agreedHours,
+                hourlyCost
+        );
 
+        employeeRepository.save(employee);
         LOGGER.info("Created employee: " + employee.getName());
+
         return employee;
     }
 
-    public void addSkill(Employee employee, Skill skill, Proficiency proficiency) {
-        Employee managedEmployee = requireManagedEmployee(employee);
+    public List<Employee> getEmployees() {
+        return Collections.unmodifiableList(new ArrayList<>(employeeRepository.findAll()));
+    }
+
+    public Optional<Employee> findEmployeeByName(String name) {
+        Objects.requireNonNull(name, "Name cannot be null");
+        return employeeRepository.findByName(normalizeName(name));
+    }
+
+    public Employee getEmployeeByName(String name) {
+        Objects.requireNonNull(name, "Name cannot be null");
+
+        String normalizeName = normalizeName(name);
+
+        return employeeRepository.findByName(normalizeName)
+                .orElseThrow(() -> new EmployeeNotFoundException(normalizeName));
+    }
+
+    public void addSkill(String employeeName, Skill skill, Proficiency proficiency) {
+        Employee employee = getEmployeeByName(employeeName);
         Objects.requireNonNull(skill, "Skill cannot be null");
         Objects.requireNonNull(proficiency, "Proficiency cannot be null");
 
-        managedEmployee.getSkills().addOrUpdate(skill, proficiency);
-        employeeRepository.save(managedEmployee);
+        employee.getSkills().addOrUpdate(skill, proficiency);
+        employeeRepository.save(employee);
 
-        LOGGER.info("Added/updated skill " + skill + " for employee " + managedEmployee.getName());
+        LOGGER.info("Added/updated skill " + skill + " for employee " + employee.getName());
     }
 
-    public void addUnavailability(Employee employee, DayOfWeek day, TimeRange range) {
-        Employee managedEmployee = requireManagedEmployee(employee);
+    /**
+     * Convenience overload if the caller already has the employee reference.
+     */
+    public void addSkill(Employee employee, Skill skill, Proficiency proficiency) {
+        Objects.requireNonNull(employee, "Employee cannot be null");
+        addSkill(employee.getName(), skill, proficiency);
+    }
+
+    public void addUnavailability(String employeeName, DayOfWeek day, TimeRange range) {
+        Employee employee = getEmployeeByName(employeeName);
         Objects.requireNonNull(day, "Day cannot be null");
         Objects.requireNonNull(range, "Time range cannot be null");
 
-        managedEmployee.getAvailability().addTimeOff(day, range);
-        employeeRepository.save(managedEmployee);
+        employee.getAvailability().addTimeOff(day, range);
+        employeeRepository.save(employee);
 
-        LOGGER.info("Added unavailability for " + managedEmployee.getName());
+        LOGGER.info("Added unavailability for " + employee.getName()
+                + " on " + day + " during " + range);
     }
 
-    public void addLeave(Employee employee, Leave leave) {
-        Employee managedEmployee = requireManagedEmployee(employee);
+    /**
+     * Convenience overload if the caller already has the employee reference.
+     */
+    public void addUnavailability(Employee employee, DayOfWeek day, TimeRange range) {
+        Objects.requireNonNull(employee, "Employee cannot be null");
+        addUnavailability(employee.getName(), day, range);
+    }
+
+    public void addLeave(String employeeName, Leave leave) {
+        Employee employee = getEmployeeByName(employeeName);
         Objects.requireNonNull(leave, "Leave cannot be null");
 
-        managedEmployee.addLeave(leave);
-        employeeRepository.save(managedEmployee);
+        employee.addLeave(leave);
+        employeeRepository.save(employee);
 
-        LOGGER.info("Added leave for " + managedEmployee.getName());
+        LOGGER.info("Added leave for " + employee.getName());
     }
 
-    public void createTemplate(LocalDate weekStart) {
-        this.template = new WeeklyScheduleTemplate(
-                Objects.requireNonNull(weekStart, "Week start cannot be null")
-        );
+    /**
+     * Convenience overload if the caller already has the employee reference.
+     */
+    public void addLeave(Employee employee, Leave leave) {
+        Objects.requireNonNull(employee, "Employee cannot be null");
+        addLeave(employee.getName(), leave);
+    }
+
+    // =========================================================
+    // TEMPLATE MANAGEMENT
+    // =========================================================
+
+    public WeeklyScheduleTemplate createTemplate(LocalDate weekStart) {
+        Objects.requireNonNull(weekStart, "Week start cannot be null");
+
+        this.template = new WeeklyScheduleTemplate(weekStart);
         LOGGER.info("Created new weekly template for week starting " + weekStart);
+
+        return template;
     }
 
     public void setTemplate(WeeklyScheduleTemplate template) {
@@ -127,13 +199,15 @@ public class ManagerService {
     public void addTemplateSlot(ShiftSlot slot) {
         ensureTemplateExists();
         template.addSlot(Objects.requireNonNull(slot, "Slot cannot be null"));
+
         LOGGER.info("Added slot to template: " + slot);
     }
 
     public boolean removeTemplateSlot(ShiftSlot slot) {
         ensureTemplateExists();
-        boolean removed = template.removeSlot(Objects.requireNonNull(slot, "Shift slot cannot be null"));
+        Objects.requireNonNull(slot, "Slot cannot be null");
 
+        boolean removed = template.removeSlot(slot);
         if (removed) {
             LOGGER.info("Removed slot from template: " + slot);
         }
@@ -141,49 +215,64 @@ public class ManagerService {
         return removed;
     }
 
+    // =========================================================
+    // SCHEDULING
+    // =========================================================
+
     public WeeklySchedule generateSchedule() {
         ensureTemplateExists();
 
-        currentSchedule = scheduler.generateSchedule(template, employeeRepository.findAll());
-        LOGGER.info("Generated weekly schedule");
+        List<Employee> employees = employeeRepository.findAll();
+        currentSchedule = scheduler.generateSchedule(template, employees);
 
+        LOGGER.info("Generated weekly schedule with " + employees.size() + " employees");
         return currentSchedule;
+    }
+
+    public WeeklySchedule generateSchedule(WeeklyScheduleTemplate template) {
+        setTemplate(template);
+        return generateSchedule();
     }
 
     public WeeklySchedule getCurrentSchedule() {
         return currentSchedule;
     }
 
-    public List<Employee> getEmployees() {
-        return employeeRepository.findAll();
-    }
+    // =========================================================
+    // LEAVE REQUEST WORKFLOW
+    // =========================================================
 
-    public Optional<Employee> findEmployeeByName(String name) {
-        Objects.requireNonNull(name, "Name cannot be null");
-        return employeeRepository.findByName(name);
-    }
-
-    public LeaveRequest submitLeaveRequest(Employee employee, Leave leave) {
-        Employee managedEmployee = requireManagedEmployee(employee);
+    public LeaveRequest submitLeaveRequest(String employeeName, Leave leave) {
+        Employee employee = getEmployeeByName(employeeName);
         Objects.requireNonNull(leave, "Leave cannot be null");
 
-        LeaveRequest request = new LeaveRequest(nextLeaveRequestId++, managedEmployee, leave);
+        LeaveRequest request = new LeaveRequest(nextLeaveRequestId++, employee, leave);
         leaveRequests.add(request);
 
-        LOGGER.info("Leave request submitted by " + managedEmployee.getName());
+        LOGGER.info("Leave request submitted by " + employee.getName()
+                + " with request id " + request.getId());
+
         return request;
     }
 
+    /**
+     * Convenience overload if the caller already has the employee reference.
+     */
+    public LeaveRequest submitLeaveRequest(Employee employee, Leave leave) {
+        Objects.requireNonNull(employee, "Employee cannot be null");
+        return submitLeaveRequest(employee.getName(), leave);
+    }
+
     public List<LeaveRequest> getPendingRequests() {
-        List<LeaveRequest> result = new ArrayList<>();
+        List<LeaveRequest> pending = new ArrayList<>();
 
         for (LeaveRequest request : leaveRequests) {
             if (request.getStatus() == RequestStatus.PENDING) {
-                result.add(request);
+                pending.add(request);
             }
         }
 
-        return Collections.unmodifiableList(result);
+        return Collections.unmodifiableList(pending);
     }
 
     public List<LeaveRequest> getAllLeaveRequests() {
@@ -191,49 +280,54 @@ public class ManagerService {
     }
 
     public void approveLeaveRequest(int requestId) {
-        LeaveRequest request = getLeaveRequestById(requestId);
+        LeaveRequest request = getPendingLeaveRequestById(requestId);
 
-        if (request.getStatus() != RequestStatus.PENDING) {
-            throw new IllegalStateException("Leave request is not pending: " + requestId);
-        }
-
-        request.getEmployee().addLeave(request.getLeave());
+        Employee employee = request.getEmployee();
+        employee.addLeave(request.getLeave());
         request.approve();
 
-        employeeRepository.save(request.getEmployee());
+        employeeRepository.save(employee);
 
-        LOGGER.info("Approved leave request n° " + requestId);
+        LOGGER.info("Approved leave request n° " + requestId
+                + " for employee " + employee.getName());
     }
 
     public void rejectLeaveRequest(int requestId) {
-        LeaveRequest request = getLeaveRequestById(requestId);
-
-        if (request.getStatus() != RequestStatus.PENDING) {
-            throw new IllegalStateException("Leave request is not pending: " + requestId);
-        }
-
+        LeaveRequest request = getPendingLeaveRequestById(requestId);
         request.reject();
 
-        LOGGER.info("Rejected leave request n° " + requestId);
+        LOGGER.info("Rejected leave request n° " + requestId
+                + " for employee " + request.getEmployee().getName());
     }
+
+    // =========================================================
+    // MANUAL ASSIGNMENT SUPPORT
+    // =========================================================
 
     /**
      * Validates a manual assignment and returns warning messages
      * for soft-constraint violations.
+     *
+     * Hard constraints should still be checked by the caller before forcing
+     * the assignment, or by the domain model during assign().
      */
-    public List<String> validateManualAssignment(Employee employee, ShiftSlot slot, WeeklySchedule schedule) {
+    public List<String> validateManualAssignment(Employee employee,
+                                                 ShiftSlot slot,
+                                                 WeeklySchedule schedule) {
         Employee managedEmployee = requireManagedEmployee(employee);
         Objects.requireNonNull(slot, "Shift slot cannot be null");
         Objects.requireNonNull(schedule, "Schedule cannot be null");
 
         List<String> warnings = new ArrayList<>();
 
-        if (schedule.getRemainingHours(managedEmployee) < slot.durationMinutes() / 60.0) {
+        double slotHours = slot.durationMinutes() / 60.0;
+
+        if (schedule.getRemainingHours(managedEmployee) < slotHours) {
             warnings.add("Employee exceeds agreed weekly hours");
         }
 
         long assignedToday = schedule.getAssignedMinutesFor(managedEmployee, slot.getDay());
-        if (assignedToday + slot.durationMinutes() > 8 * 60) {
+        if (assignedToday + slot.durationMinutes() > MAX_DAILY_MINUTES) {
             warnings.add("Employee exceeds daily working hours");
         }
 
@@ -245,21 +339,35 @@ public class ManagerService {
     }
 
     /**
-     * Forces a manual assignment after hard constraints
-     * have already been checked by the caller.
+     * Forces a manual assignment after hard constraints have been checked.
      */
     public void forceAssign(ShiftSlot slot, Employee employee, WeeklySchedule schedule) {
         Objects.requireNonNull(slot, "Shift slot cannot be null");
-        Employee managedEmployee = requireManagedEmployee(employee);
         Objects.requireNonNull(schedule, "Schedule cannot be null");
 
+        Employee managedEmployee = requireManagedEmployee(employee);
         schedule.assign(slot, managedEmployee);
+
         LOGGER.info("Force-assigned " + managedEmployee.getName() + " to slot " + slot);
+    }
+
+    // =========================================================
+    // PRIVATE HELPERS
+    // =========================================================
+
+    private LeaveRequest getPendingLeaveRequestById(int requestId) {
+        LeaveRequest request = getLeaveRequestById(requestId);
+
+        if (request.getStatus() != RequestStatus.PENDING) {
+            throw new InvalidLeaveRequestStateException(requestId, request.getStatus());
+        }
+
+        return request;
     }
 
     private LeaveRequest getLeaveRequestById(int requestId) {
         return findLeaveRequestById(requestId)
-                .orElseThrow(() -> new IllegalArgumentException("Leave request not found: " + requestId));
+                .orElseThrow(() -> new LeaveRequestNotFoundException(requestId));
     }
 
     private Optional<LeaveRequest> findLeaveRequestById(int requestId) {
@@ -275,12 +383,20 @@ public class ManagerService {
         Objects.requireNonNull(employee, "Employee cannot be null");
 
         return employeeRepository.findByName(employee.getName())
-                .orElseThrow(() -> new IllegalArgumentException("Employee is not managed by this service"));
+                .orElseThrow(() -> new UnmanagedEmployeeException(employee.getName()));
     }
 
     private void ensureTemplateExists() {
         if (template == null) {
-            throw new IllegalStateException("Template has not been created yet");
+            throw new TemplateNotInitializedException();
         }
+    }
+
+    private String normalizeName(String name) {
+        String normalized = name.trim();
+        if (normalized.isBlank()) {
+            throw new IllegalArgumentException("Name cannot be blank");
+        }
+        return normalized;
     }
 }
