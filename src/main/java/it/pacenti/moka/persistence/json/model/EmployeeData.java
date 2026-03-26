@@ -5,6 +5,9 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * JSON snapshot of an employee.
+ */
 public class EmployeeData {
 
     private String name;
@@ -12,11 +15,14 @@ public class EmployeeData {
     private int agreedHours;
     private int hourlyCost;
 
-    private List<EmployeeSkillData> skills = new ArrayList<>();
-    private Map<String, List<TimeRangeData>> weeklyAvailability = new LinkedHashMap<>();
-    private List<LeaveData> approvedLeaves = new ArrayList<>();
+    private List<EmployeeSkillData> skills;
+    private Map<String, List<TimeRangeData>> weeklyTimeOff;
+    private List<LeaveData> approvedLeaves;
 
     public EmployeeData() {
+        this.skills = new ArrayList<>();
+        this.weeklyTimeOff = new LinkedHashMap<>();
+        this.approvedLeaves = new ArrayList<>();
     }
 
     public String getName() {
@@ -59,12 +65,12 @@ public class EmployeeData {
         this.skills = skills != null ? skills : new ArrayList<>();
     }
 
-    public Map<String, List<TimeRangeData>> getWeeklyAvailability() {
-        return weeklyAvailability;
+    public Map<String, List<TimeRangeData>> getWeeklyTimeOff() {
+        return weeklyTimeOff;
     }
 
-    public void setWeeklyAvailability(Map<String, List<TimeRangeData>> weeklyAvailability) {
-        this.weeklyAvailability = weeklyAvailability != null ? weeklyAvailability : new LinkedHashMap<>();
+    public void setWeeklyTimeOff(Map<String, List<TimeRangeData>> weeklyTimeOff) {
+        this.weeklyTimeOff = weeklyTimeOff != null ? weeklyTimeOff : new LinkedHashMap<>();
     }
 
     public List<LeaveData> getApprovedLeaves() {

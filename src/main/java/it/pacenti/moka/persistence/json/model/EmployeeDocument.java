@@ -3,12 +3,17 @@ package it.pacenti.moka.persistence.json.model;
 import java.util.ArrayList;
 import java.util.List;
 
+/**
+ * Root JSON document for employee persistence
+ */
 public class EmployeeDocument {
 
-    private int schemaVersion = 1;
-    private List<EmployeeData> employees = new ArrayList<>();
+    private int schemaVersion;
+    private List<EmployeeData> employees;
 
     public EmployeeDocument() {
+        this.schemaVersion = 1;
+        this.employees = new ArrayList<>();
     }
 
     public int getSchemaVersion() {
