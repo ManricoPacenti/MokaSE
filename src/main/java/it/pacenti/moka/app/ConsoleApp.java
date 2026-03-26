@@ -25,11 +25,10 @@ public class ConsoleApp {
         ManagerService managerService = new ManagerService(
                 employeeRepository,
                 leaveRequestRepository,
-                employeeFactory,
-                shiftScheduler
+                employeeFactory
         );
 
-        DemoScenario demoScenario = new DemoScenario(managerService);
+        DemoScenario demoScenario = new DemoScenario(managerService, shiftScheduler);
         demoScenario.run();
     }
 

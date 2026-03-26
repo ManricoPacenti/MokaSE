@@ -9,6 +9,7 @@ import it.pacenti.moka.employee.Priority;
 import it.pacenti.moka.employee.Proficiency;
 import it.pacenti.moka.employee.Skill;
 import it.pacenti.moka.scheduling.Assignment;
+import it.pacenti.moka.scheduling.ShiftScheduler;
 import it.pacenti.moka.scheduling.ShiftSlot;
 import it.pacenti.moka.scheduling.TimeRange;
 import it.pacenti.moka.scheduling.WeeklySchedule;
@@ -26,9 +27,14 @@ import java.util.Map;
 public class DemoScenario {
 
     private final ManagerService managerService;
+    private final ShiftScheduler shiftScheduler;
 
-    public DemoScenario(ManagerService managerService) {
+    private WeeklyScheduleTemplate template;
+    private WeeklySchedule currentSchedule;
+
+    public DemoScenario(ManagerService managerService, ShiftScheduler shiftScheduler) {
         this.managerService = managerService;
+        this.shiftScheduler = shiftScheduler;
     }
 
     public void run() {
@@ -59,22 +65,29 @@ public class DemoScenario {
     private void assignSkills() {
         printSection("2. Assigning skills");
 
-        managerService.addSkill("Alice", Skill.OPENING, Proficiency.HIGH);
-        managerService.addSkill("Alice", Skill.RESP, Proficiency.HIGH);
-        managerService.addSkill("Alice", Skill.WAITER, Proficiency.MID);
+        Employee alice = getEmployee("Alice");
+        alice.getSkills().addOrUpdate(Skill.OPENING, Proficiency.HIGH);
+        alice.getSkills().addOrUpdate(Skill.RESP, Proficiency.HIGH);
+        alice.getSkills().addOrUpdate(Skill.WAITER, Proficiency.MID);
 
-        managerService.addSkill("Bruno", Skill.KITCHEN, Proficiency.HIGH);
-        managerService.addSkill("Bruno", Skill.OPENING, Proficiency.MID);
+        Employee bruno = getEmployee("Bruno");
+        bruno.getSkills().addOrUpdate(Skill.KITCHEN, Proficiency.HIGH);
+        bruno.getSkills().addOrUpdate(Skill.OPENING, Proficiency.MID);
 
-        managerService.addSkill("Chiara", Skill.WAITER, Proficiency.HIGH);
-        managerService.addSkill("Chiara", Skill.RUNNER, Proficiency.HIGH);
-        managerService.addSkill("Chiara", Skill.BAR, Proficiency.MID);
+        Employee chiara = getEmployee("Chiara");
+        chiara.getSkills().addOrUpdate(Skill.WAITER, Proficiency.HIGH);
+        chiara.getSkills().addOrUpdate(Skill.RUNNER, Proficiency.HIGH);
+        chiara.getSkills().addOrUpdate(Skill.BAR, Proficiency.MID);
 
-        managerService.addSkill("Davide", Skill.BAR, Proficiency.MID);
-        managerService.addSkill("Davide", Skill.WAITER, Proficiency.LOW);
+        Employee davide = getEmployee("Davide");
+        davide.getSkills().addOrUpdate(Skill.BAR, Proficiency.MID);
+        davide.getSkills().addOrUpdate(Skill.WAITER, Proficiency.LOW);
 
-        managerService.addSkill("Elena", Skill.RUNNER, Proficiency.MID);
-        managerService.addSkill("Elena", Skill.BAR, Proficiency.LOW);
+        Employee elena = getEmployee("Elena");
+        elena.getSkills().addOrUpdate(Skill.RUNNER, Proficiency.MID);
+        elena.getSkills().addOrUpdate(Skill.BAR, Proficiency.LOW);
+
+        saveAll(alice, bruno, chiara, davide, elena);
 
         printEmployeesSnapshot();
     }
@@ -85,21 +98,28 @@ public class DemoScenario {
         TimeRange lunch = new TimeRange(LocalTime.of(10, 0), LocalTime.of(15, 0));
         TimeRange dinner = new TimeRange(LocalTime.of(18, 0), LocalTime.of(23, 0));
 
-        managerService.addUnavailability("Alice", DayOfWeek.SUNDAY, lunch);
-        managerService.addUnavailability("Alice", DayOfWeek.SUNDAY, dinner);
+        Employee alice = getEmployee("Alice");
+        alice.getAvailability().addTimeOff(DayOfWeek.SUNDAY, lunch);
+        alice.getAvailability().addTimeOff(DayOfWeek.SUNDAY, dinner);
 
-        managerService.addUnavailability("Bruno", DayOfWeek.MONDAY, dinner);
-        managerService.addUnavailability("Bruno", DayOfWeek.TUESDAY, dinner);
+        Employee bruno = getEmployee("Bruno");
+        bruno.getAvailability().addTimeOff(DayOfWeek.MONDAY, dinner);
+        bruno.getAvailability().addTimeOff(DayOfWeek.TUESDAY, dinner);
 
-        managerService.addUnavailability("Chiara", DayOfWeek.WEDNESDAY, lunch);
+        Employee chiara = getEmployee("Chiara");
+        chiara.getAvailability().addTimeOff(DayOfWeek.WEDNESDAY, lunch);
 
-        managerService.addUnavailability("Davide", DayOfWeek.MONDAY, lunch);
-        managerService.addUnavailability("Davide", DayOfWeek.TUESDAY, lunch);
-        managerService.addUnavailability("Davide", DayOfWeek.WEDNESDAY, lunch);
-        managerService.addUnavailability("Davide", DayOfWeek.THURSDAY, lunch);
+        Employee davide = getEmployee("Davide");
+        davide.getAvailability().addTimeOff(DayOfWeek.MONDAY, lunch);
+        davide.getAvailability().addTimeOff(DayOfWeek.TUESDAY, lunch);
+        davide.getAvailability().addTimeOff(DayOfWeek.WEDNESDAY, lunch);
+        davide.getAvailability().addTimeOff(DayOfWeek.THURSDAY, lunch);
 
-        managerService.addUnavailability("Elena", DayOfWeek.FRIDAY, dinner);
-        managerService.addUnavailability("Elena", DayOfWeek.SATURDAY, dinner);
+        Employee elena = getEmployee("Elena");
+        elena.getAvailability().addTimeOff(DayOfWeek.FRIDAY, dinner);
+        elena.getAvailability().addTimeOff(DayOfWeek.SATURDAY, dinner);
+
+        saveAll(alice, bruno, chiara, davide, elena);
 
         printUnavailabilitySnapshot();
     }
@@ -117,10 +137,10 @@ public class DemoScenario {
                 "One lunch shift off for personal rest"
         );
 
-        LeaveRequest request = managerService.submitLeaveRequest("Chiara", chiaraLeave);
+        LeaveRequest request = managerService.createLeaveRequest("Chiara", chiaraLeave);
         System.out.println("Submitted leave request for Chiara. Request id: " + request.getId());
 
-        managerService.approveLeaveRequest(request.getId());
+        managerService.approveRequest(request.getId());
         System.out.println("Approved leave request id: " + request.getId());
 
         printPendingRequestsSnapshot();
@@ -131,50 +151,50 @@ public class DemoScenario {
         printSection("5. Creating weekly template");
 
         LocalDate monday = LocalDate.now().with(DayOfWeek.MONDAY);
-        managerService.createTemplate(monday);
+        template = new WeeklyScheduleTemplate(monday);
 
         TimeRange lunch = new TimeRange(LocalTime.of(10, 0), LocalTime.of(15, 0));
         TimeRange dinner = new TimeRange(LocalTime.of(18, 0), LocalTime.of(23, 0));
 
         // MONDAY
-        managerService.addTemplateSlot(new ShiftSlot(DayOfWeek.MONDAY, lunch, Skill.OPENING));
-        managerService.addTemplateSlot(new ShiftSlot(DayOfWeek.MONDAY, lunch, Skill.KITCHEN));
-        managerService.addTemplateSlot(new ShiftSlot(DayOfWeek.MONDAY, lunch, Skill.WAITER));
-        managerService.addTemplateSlot(new ShiftSlot(DayOfWeek.MONDAY, dinner, Skill.RESP));
-        managerService.addTemplateSlot(new ShiftSlot(DayOfWeek.MONDAY, dinner, Skill.KITCHEN));
-        managerService.addTemplateSlot(new ShiftSlot(DayOfWeek.MONDAY, dinner, Skill.RUNNER));
+        template.addSlot(new ShiftSlot(DayOfWeek.MONDAY, lunch, Skill.OPENING));
+        template.addSlot(new ShiftSlot(DayOfWeek.MONDAY, lunch, Skill.KITCHEN));
+        template.addSlot(new ShiftSlot(DayOfWeek.MONDAY, lunch, Skill.WAITER));
+        template.addSlot(new ShiftSlot(DayOfWeek.MONDAY, dinner, Skill.RESP));
+        template.addSlot(new ShiftSlot(DayOfWeek.MONDAY, dinner, Skill.KITCHEN));
+        template.addSlot(new ShiftSlot(DayOfWeek.MONDAY, dinner, Skill.RUNNER));
 
         // TUESDAY
-        managerService.addTemplateSlot(new ShiftSlot(DayOfWeek.TUESDAY, lunch, Skill.OPENING));
-        managerService.addTemplateSlot(new ShiftSlot(DayOfWeek.TUESDAY, lunch, Skill.BAR));
-        managerService.addTemplateSlot(new ShiftSlot(DayOfWeek.TUESDAY, lunch, Skill.WAITER));
-        managerService.addTemplateSlot(new ShiftSlot(DayOfWeek.TUESDAY, dinner, Skill.RESP));
-        managerService.addTemplateSlot(new ShiftSlot(DayOfWeek.TUESDAY, dinner, Skill.KITCHEN));
-        managerService.addTemplateSlot(new ShiftSlot(DayOfWeek.TUESDAY, dinner, Skill.RUNNER));
+        template.addSlot(new ShiftSlot(DayOfWeek.TUESDAY, lunch, Skill.OPENING));
+        template.addSlot(new ShiftSlot(DayOfWeek.TUESDAY, lunch, Skill.BAR));
+        template.addSlot(new ShiftSlot(DayOfWeek.TUESDAY, lunch, Skill.WAITER));
+        template.addSlot(new ShiftSlot(DayOfWeek.TUESDAY, dinner, Skill.RESP));
+        template.addSlot(new ShiftSlot(DayOfWeek.TUESDAY, dinner, Skill.KITCHEN));
+        template.addSlot(new ShiftSlot(DayOfWeek.TUESDAY, dinner, Skill.RUNNER));
 
         // WEDNESDAY
-        managerService.addTemplateSlot(new ShiftSlot(DayOfWeek.WEDNESDAY, lunch, Skill.OPENING));
-        managerService.addTemplateSlot(new ShiftSlot(DayOfWeek.WEDNESDAY, lunch, Skill.KITCHEN));
-        managerService.addTemplateSlot(new ShiftSlot(DayOfWeek.WEDNESDAY, lunch, Skill.WAITER));
-        managerService.addTemplateSlot(new ShiftSlot(DayOfWeek.WEDNESDAY, dinner, Skill.RESP));
-        managerService.addTemplateSlot(new ShiftSlot(DayOfWeek.WEDNESDAY, dinner, Skill.BAR));
-        managerService.addTemplateSlot(new ShiftSlot(DayOfWeek.WEDNESDAY, dinner, Skill.RUNNER));
+        template.addSlot(new ShiftSlot(DayOfWeek.WEDNESDAY, lunch, Skill.OPENING));
+        template.addSlot(new ShiftSlot(DayOfWeek.WEDNESDAY, lunch, Skill.KITCHEN));
+        template.addSlot(new ShiftSlot(DayOfWeek.WEDNESDAY, lunch, Skill.WAITER));
+        template.addSlot(new ShiftSlot(DayOfWeek.WEDNESDAY, dinner, Skill.RESP));
+        template.addSlot(new ShiftSlot(DayOfWeek.WEDNESDAY, dinner, Skill.BAR));
+        template.addSlot(new ShiftSlot(DayOfWeek.WEDNESDAY, dinner, Skill.RUNNER));
 
         // FRIDAY
-        managerService.addTemplateSlot(new ShiftSlot(DayOfWeek.FRIDAY, lunch, Skill.OPENING));
-        managerService.addTemplateSlot(new ShiftSlot(DayOfWeek.FRIDAY, lunch, Skill.WAITER));
-        managerService.addTemplateSlot(new ShiftSlot(DayOfWeek.FRIDAY, lunch, Skill.BAR));
-        managerService.addTemplateSlot(new ShiftSlot(DayOfWeek.FRIDAY, dinner, Skill.RESP));
-        managerService.addTemplateSlot(new ShiftSlot(DayOfWeek.FRIDAY, dinner, Skill.KITCHEN));
-        managerService.addTemplateSlot(new ShiftSlot(DayOfWeek.FRIDAY, dinner, Skill.RUNNER));
+        template.addSlot(new ShiftSlot(DayOfWeek.FRIDAY, lunch, Skill.OPENING));
+        template.addSlot(new ShiftSlot(DayOfWeek.FRIDAY, lunch, Skill.WAITER));
+        template.addSlot(new ShiftSlot(DayOfWeek.FRIDAY, lunch, Skill.BAR));
+        template.addSlot(new ShiftSlot(DayOfWeek.FRIDAY, dinner, Skill.RESP));
+        template.addSlot(new ShiftSlot(DayOfWeek.FRIDAY, dinner, Skill.KITCHEN));
+        template.addSlot(new ShiftSlot(DayOfWeek.FRIDAY, dinner, Skill.RUNNER));
 
         // SATURDAY
-        managerService.addTemplateSlot(new ShiftSlot(DayOfWeek.SATURDAY, lunch, Skill.OPENING));
-        managerService.addTemplateSlot(new ShiftSlot(DayOfWeek.SATURDAY, lunch, Skill.WAITER));
-        managerService.addTemplateSlot(new ShiftSlot(DayOfWeek.SATURDAY, lunch, Skill.RUNNER));
-        managerService.addTemplateSlot(new ShiftSlot(DayOfWeek.SATURDAY, dinner, Skill.RESP));
-        managerService.addTemplateSlot(new ShiftSlot(DayOfWeek.SATURDAY, dinner, Skill.KITCHEN));
-        managerService.addTemplateSlot(new ShiftSlot(DayOfWeek.SATURDAY, dinner, Skill.BAR));
+        template.addSlot(new ShiftSlot(DayOfWeek.SATURDAY, lunch, Skill.OPENING));
+        template.addSlot(new ShiftSlot(DayOfWeek.SATURDAY, lunch, Skill.WAITER));
+        template.addSlot(new ShiftSlot(DayOfWeek.SATURDAY, lunch, Skill.RUNNER));
+        template.addSlot(new ShiftSlot(DayOfWeek.SATURDAY, dinner, Skill.RESP));
+        template.addSlot(new ShiftSlot(DayOfWeek.SATURDAY, dinner, Skill.KITCHEN));
+        template.addSlot(new ShiftSlot(DayOfWeek.SATURDAY, dinner, Skill.BAR));
 
         printTemplateSnapshot();
     }
@@ -182,27 +202,31 @@ public class DemoScenario {
     private void generateAndPrintSchedule() {
         printSection("6. Generating weekly schedule");
 
-        WeeklySchedule schedule = managerService.generateSchedule();
+        currentSchedule = shiftScheduler.generateSchedule(
+                template,
+                managerService.getAllEmployees()
+        );
+
         System.out.println("Schedule generated successfully.");
 
-        printScheduleSummary(schedule);
-        printAssignmentsSnapshot(schedule);
+        printScheduleSummary(currentSchedule);
+        printAssignmentsSnapshot(currentSchedule);
 
         printSection("7. Printing weekly schedule grid");
         SchedulePrinter printer = new SchedulePrinter();
-        printer.printWeeklyGrid(schedule);
+        printer.printWeeklyGrid(currentSchedule);
 
         printSection("8. Coverage summary");
-        printCoverageSummary(schedule);
+        printCoverageSummary(currentSchedule);
 
         printSection("9. Unassigned slots");
-        printUnassignedSlots(schedule);
+        printUnassignedSlots(currentSchedule);
     }
 
     private void printEmployeesSnapshot() {
         printSubSection("Employees snapshot");
 
-        List<Employee> employees = managerService.getEmployees().stream()
+        List<Employee> employees = managerService.getAllEmployees().stream()
                 .sorted(Comparator.comparing(Employee::getName))
                 .toList();
 
@@ -228,7 +252,7 @@ public class DemoScenario {
     private void printUnavailabilitySnapshot() {
         printSubSection("Weekly unavailability snapshot");
 
-        List<Employee> employees = managerService.getEmployees().stream()
+        List<Employee> employees = managerService.getAllEmployees().stream()
                 .sorted(Comparator.comparing(Employee::getName))
                 .toList();
 
@@ -247,7 +271,7 @@ public class DemoScenario {
                     .forEach(entry -> {
                         String ranges = entry.getValue().stream()
                                 .sorted(Comparator.comparing(TimeRange::getStart))
-                                .map(range -> formatRange(range))
+                                .map(this::formatRange)
                                 .reduce((a, b) -> a + ", " + b)
                                 .orElse("");
                         System.out.println("  " + entry.getKey() + ": " + ranges);
@@ -273,7 +297,7 @@ public class DemoScenario {
     private void printApprovedLeavesSnapshot() {
         printSubSection("Approved leaves snapshot");
 
-        List<Employee> employees = managerService.getEmployees().stream()
+        List<Employee> employees = managerService.getAllEmployees().stream()
                 .sorted(Comparator.comparing(Employee::getName))
                 .toList();
 
@@ -294,8 +318,6 @@ public class DemoScenario {
 
     private void printTemplateSnapshot() {
         printSubSection("Template snapshot");
-
-        WeeklyScheduleTemplate template = managerService.getTemplate();
 
         if (template == null) {
             System.out.println("No template initialized.");
@@ -325,7 +347,7 @@ public class DemoScenario {
     private void printScheduleSummary(WeeklySchedule schedule) {
         printSubSection("Schedule summary by employee");
 
-        List<Employee> employees = managerService.getEmployees().stream()
+        List<Employee> employees = managerService.getAllEmployees().stream()
                 .sorted(Comparator.comparing(Employee::getName))
                 .toList();
 
@@ -401,6 +423,20 @@ public class DemoScenario {
                     + formatRange(slot.getRange())
                     + " | "
                     + slot.getRequiredSkill());
+        }
+    }
+
+    private Employee getEmployee(String name) {
+        return managerService.findEmployee(name)
+                .orElseThrow(() -> new IllegalStateException("Employee not found in demo: " + name));
+    }
+
+    private void saveAll(Employee... employees) {
+        for (Employee employee : employees) {
+            managerService.saveEmployee(employee);
+            // serve un alias di compatibilità oppure un metodo saveEmployee nel service;
+            // qui usiamo il repository solo se vuoi tenere il service minimale
+            // vedi nota sotto
         }
     }
 
