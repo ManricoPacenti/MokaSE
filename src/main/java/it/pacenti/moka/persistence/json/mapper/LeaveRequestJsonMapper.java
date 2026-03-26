@@ -1,14 +1,17 @@
-package it.pacenti.moka.persistence.mapper;
+package it.pacenti.moka.persistence.json.mapper;
 
 import it.pacenti.moka.availability.Leave;
 import it.pacenti.moka.availability.LeaveRequest;
 import it.pacenti.moka.availability.LeaveType;
 import it.pacenti.moka.availability.RequestStatus;
 import it.pacenti.moka.employee.Employee;
-import it.pacenti.moka.persistence.dto.LeaveData;
-import it.pacenti.moka.persistence.dto.LeaveRequestData;
+import it.pacenti.moka.persistence.json.model.LeaveData;
+import it.pacenti.moka.persistence.json.model.LeaveRequestData;
 import it.pacenti.moka.repository.EmployeeRepository;
+import it.pacenti.moka.scheduling.TimeRange;
 
+import java.time.LocalDate;
+import java.time.LocalTime;
 import java.util.Objects;
 
 public class LeaveRequestJsonMapper {
@@ -17,12 +20,13 @@ public class LeaveRequestJsonMapper {
         Objects.requireNonNull(request, "Leave request cannot be null");
 
         Leave leave = request.getLeave();
-        LeaveData leaveData = new LeaveData(
-                leave.getDate(),
-                leave.getRange().getStart(),
-                leave.getRange().getEnd(),
-                leave.getType().name()
-        );
+
+        LeaveData leaveData = new LeaveData();
+        leaveData.setDate(leave.getDate().toString());
+        leaveData.setType(leave.getType().name());
+        leaveData.setStart(leave.getRange().getStart().toString());
+        leaveData.setEnd(leave.getRange().getEnd().toString());
+        leaveData.setNote(leave.getNote());
 
         return new LeaveRequestData(
                 request.getId(),
@@ -44,12 +48,13 @@ public class LeaveRequestJsonMapper {
         LeaveData leaveData = Objects.requireNonNull(data.getLeave(), "Leave data cannot be null");
 
         Leave leave = new Leave(
-                leaveData.getDate(),
-                new it.pacenti.moka.scheduling.TimeRange(
-                        leaveData.getStartTime(),
-                        leaveData.getEndTime()
+                LocalDate.parse(leaveData.getDate()),
+                new TimeRange(
+                        LocalTime.parse(leaveData.getStart()),
+                        LocalTime.parse(leaveData.getEnd())
                 ),
-                LeaveType.valueOf(leaveData.getType())
+                LeaveType.valueOf(leaveData.getType()),
+                leaveData.getNote()
         );
 
         RequestStatus status = RequestStatus.valueOf(data.getStatus());

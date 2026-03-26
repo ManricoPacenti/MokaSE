@@ -1,11 +1,13 @@
 package it.pacenti.moka.persistence;
 
 import it.pacenti.moka.availability.Leave;
+import it.pacenti.moka.availability.LeaveType;
 import it.pacenti.moka.employee.Employee;
 import it.pacenti.moka.employee.EmployeeFactory;
 import it.pacenti.moka.employee.Priority;
 import it.pacenti.moka.employee.Proficiency;
 import it.pacenti.moka.employee.Skill;
+import it.pacenti.moka.persistence.json.JsonEmployeeRepository;
 import it.pacenti.moka.scheduling.TimeRange;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -27,7 +29,7 @@ class JsonEmployeeRepositoryTest {
     void shouldSaveAndReloadEmployeeFromJsonFile() {
         Path filePath = tempDir.resolve("employees.json");
 
-        JsonEmployeeRepositoryTest repository = new JsonEmployeeRepositoryTest(filePath);
+        JsonEmployeeRepository repository = new JsonEmployeeRepository(filePath);
         EmployeeFactory employeeFactory = new EmployeeFactory();
 
         Employee employee = employeeFactory.createEmployee(
@@ -49,14 +51,14 @@ class JsonEmployeeRepositoryTest {
         Leave leave = new Leave(
                 LocalDate.of(2026, 3, 28),
                 new TimeRange(LocalTime.of(18, 0), LocalTime.of(23, 0)),
-                it.pacenti.moka.availability.LeaveType.VACATION,
+                LeaveType.VACATION,
                 "Family trip"
         );
         employee.addLeave(leave);
 
         repository.save(employee);
 
-        JsonEmployeeRepositoryTest reloadedRepository = new JsonEmployeeRepositoryTest(filePath);
+        JsonEmployeeRepository reloadedRepository = new JsonEmployeeRepository(filePath);
 
         Optional<Employee> loadedOptional = reloadedRepository.findByName("Luca Rossi");
 

@@ -25,6 +25,15 @@ public class LeaveRequest {
         this.status = RequestStatus.PENDING;
     }
 
+    public static LeaveRequest reconstitute(int id,
+                                            Employee employee,
+                                            Leave leave,
+                                            RequestStatus status) {
+        LeaveRequest request = new LeaveRequest(id, employee, leave);
+        request.status = Objects.requireNonNull(status, "Status cannot be null");
+        return request;
+    }
+
     public int getId() {
         return id;
     }
