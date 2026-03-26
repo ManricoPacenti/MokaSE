@@ -6,13 +6,20 @@ import it.pacenti.moka.availability.RequestStatus;
 import it.pacenti.moka.employee.Employee;
 import it.pacenti.moka.employee.EmployeeFactory;
 import it.pacenti.moka.employee.Priority;
+import it.pacenti.moka.employee.Proficiency;
+import it.pacenti.moka.employee.Skill;
 import it.pacenti.moka.exception.DuplicateEmployeeException;
 import it.pacenti.moka.exception.EmployeeNotFoundException;
 import it.pacenti.moka.exception.InvalidLeaveRequestStateException;
 import it.pacenti.moka.exception.LeaveRequestNotFoundException;
 import it.pacenti.moka.repository.EmployeeRepository;
 import it.pacenti.moka.repository.LeaveRequestRepository;
+import it.pacenti.moka.scheduling.ShiftScheduler;
+import it.pacenti.moka.scheduling.TimeRange;
+import it.pacenti.moka.scheduling.WeeklySchedule;
+import it.pacenti.moka.scheduling.WeeklyScheduleTemplate;
 
+import java.time.DayOfWeek;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -25,6 +32,8 @@ import java.util.logging.Logger;
  * - employee creation and retrieval
  * - leave request submission
  * - leave request approval / rejection
+ * - employee enrichment (skills / weekly unavailability)
+ * - schedule generation
  *
  * Business invariants remain inside the domain model.
  * Persistence concerns remain inside repositories.
@@ -36,10 +45,12 @@ public class ManagerService {
     private final EmployeeRepository employeeRepository;
     private final LeaveRequestRepository leaveRequestRepository;
     private final EmployeeFactory employeeFactory;
+    private final ShiftScheduler shiftScheduler;
 
     public ManagerService(EmployeeRepository employeeRepository,
                           LeaveRequestRepository leaveRequestRepository,
-                          EmployeeFactory employeeFactory) {
+                          EmployeeFactory employeeFactory,
+                          ShiftScheduler shiftScheduler) {
         this.employeeRepository = Objects.requireNonNull(
                 employeeRepository,
                 "Employee repository cannot be null"
@@ -52,13 +63,23 @@ public class ManagerService {
                 employeeFactory,
                 "Employee factory cannot be null"
         );
+        this.shiftScheduler = Objects.requireNonNull(
+                shiftScheduler,
+                "Shift scheduler cannot be null"
+        );
     }
 
-    /**
-     * Creates a new employee in a valid initial state and persists it.
-     *
-     * @throws DuplicateEmployeeException if an employee with the same normalized name already exists
-     */
+    public ManagerService(EmployeeRepository employeeRepository,
+                          LeaveRequestRepository leaveRequestRepository,
+                          EmployeeFactory employeeFactory) {
+        this(
+                employeeRepository,
+                leaveRequestRepository,
+                employeeFactory,
+                new ShiftScheduler()
+        );
+    }
+
     public Employee createEmployee(String name,
                                    Priority priority,
                                    int agreedHours,
@@ -85,28 +106,54 @@ public class ManagerService {
         return employee;
     }
 
-    /**
-     * Finds an employee by name.
-     *
-     * @return Optional containing the employee if found, otherwise empty
-     */
     public Optional<Employee> findEmployee(String name) {
         Objects.requireNonNull(name, "Name cannot be null");
         return employeeRepository.findByName(normalizeName(name));
     }
 
-    /**
-     * Returns all managed employees.
-     */
     public List<Employee> getAllEmployees() {
         return List.copyOf(employeeRepository.findAll());
     }
 
-    /**
-     * Creates and persists a new leave request for an existing employee.
-     *
-     * @throws EmployeeNotFoundException if the employee does not exist
-     */
+    public void addSkillToEmployee(String employeeName, Skill skill, Proficiency proficiency) {
+        Objects.requireNonNull(employeeName, "Employee name cannot be null");
+        Objects.requireNonNull(skill, "Skill cannot be null");
+        Objects.requireNonNull(proficiency, "Proficiency cannot be null");
+
+        Employee employee = getRequiredEmployee(employeeName);
+        employee.getSkills().addOrUpdate(skill, proficiency);
+        employeeRepository.save(employee);
+
+        LOGGER.info("Added/updated skill " + skill
+                + " with proficiency " + proficiency
+                + " for employee " + employee.getName());
+    }
+
+    public void addWeeklyTimeOff(String employeeName, DayOfWeek day, TimeRange range) {
+        Objects.requireNonNull(employeeName, "Employee name cannot be null");
+        Objects.requireNonNull(day, "Day cannot be null");
+        Objects.requireNonNull(range, "Time range cannot be null");
+
+        Employee employee = getRequiredEmployee(employeeName);
+        employee.getAvailability().addTimeOff(day, range);
+        employeeRepository.save(employee);
+
+        LOGGER.info("Added weekly time off for employee " + employee.getName()
+                + " on " + day + " in range " + range);
+    }
+
+    public void addFullDayOff(String employeeName, DayOfWeek day) {
+        Objects.requireNonNull(employeeName, "Employee name cannot be null");
+        Objects.requireNonNull(day, "Day cannot be null");
+
+        Employee employee = getRequiredEmployee(employeeName);
+        employee.getAvailability().addFullDayOff(day);
+        employeeRepository.save(employee);
+
+        LOGGER.info("Added full day off for employee " + employee.getName()
+                + " on " + day);
+    }
+
     public LeaveRequest createLeaveRequest(String employeeName, Leave leave) {
         Objects.requireNonNull(employeeName, "Employee name cannot be null");
         Objects.requireNonNull(leave, "Leave cannot be null");
@@ -127,31 +174,10 @@ public class ManagerService {
         return request;
     }
 
-    /**
-     * Returns all pending leave requests.
-     */
     public List<LeaveRequest> getPendingRequests() {
         return List.copyOf(leaveRequestRepository.findPending());
     }
 
-    /**
-     * Approves a pending request.
-     *
-     * Approval workflow:
-     * 1. request must exist
-     * 2. request must be pending
-     * 3. leave is added to employee
-     * 4. request status becomes APPROVED
-     * 5. both employee and request are persisted
-     *
-     * Important:
-     * employee.addLeave(...) is intentionally executed before request.approve().
-     * If the leave conflicts with existing approved leaves, the domain will throw
-     * and the request will remain PENDING.
-     *
-     * @throws LeaveRequestNotFoundException if the request does not exist
-     * @throws InvalidLeaveRequestStateException if the request is not pending
-     */
     public void approveRequest(int requestId) {
         LeaveRequest request = getRequiredRequest(requestId);
         ensurePending(request);
@@ -168,12 +194,6 @@ public class ManagerService {
                 + " for employee " + employee.getName());
     }
 
-    /**
-     * Rejects a pending request and persists the new state.
-     *
-     * @throws LeaveRequestNotFoundException if the request does not exist
-     * @throws InvalidLeaveRequestStateException if the request is not pending
-     */
     public void rejectRequest(int requestId) {
         LeaveRequest request = getRequiredRequest(requestId);
         ensurePending(request);
@@ -185,9 +205,15 @@ public class ManagerService {
                 + " for employee " + request.getEmployee().getName());
     }
 
-    // =========================================================
-    // Private helpers
-    // =========================================================
+    public WeeklySchedule generateSchedule(WeeklyScheduleTemplate template) {
+        Objects.requireNonNull(template, "Weekly schedule template cannot be null");
+
+        List<Employee> employees = employeeRepository.findAll();
+        WeeklySchedule schedule = shiftScheduler.generateSchedule(template, employees);
+
+        LOGGER.info("Generated schedule for week starting " + template.getWeekStart());
+        return schedule;
+    }
 
     private Employee getRequiredEmployee(String employeeName) {
         String normalizedName = normalizeName(employeeName);
@@ -218,10 +244,8 @@ public class ManagerService {
             throw new IllegalArgumentException("Name cannot be blank");
         }
 
-        return normalized;
+        return normalized.toLowerCase();
     }
-
-    //Alias bridge-method:
 
     public Optional<Employee> findEmployeeByName(String name) {
         return findEmployee(name);
@@ -249,7 +273,6 @@ public class ManagerService {
         rejectRequest(requestId);
     }
 
-    //Save Applicativo
     public void saveEmployee(Employee employee) {
         Objects.requireNonNull(employee, "Employee cannot be null");
         employeeRepository.save(employee);
