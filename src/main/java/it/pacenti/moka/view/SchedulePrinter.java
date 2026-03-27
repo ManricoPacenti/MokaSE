@@ -1,15 +1,17 @@
 package it.pacenti.moka.view;
 
-import it.pacenti.moka.employee.EmployeeSkill;
-import it.pacenti.moka.scheduling.*;
-
 import it.pacenti.moka.employee.Employee;
 import it.pacenti.moka.employee.Skill;
+import it.pacenti.moka.scheduling.Assignment;
+import it.pacenti.moka.scheduling.ShiftSlot;
+import it.pacenti.moka.scheduling.TimeRange;
+import it.pacenti.moka.scheduling.WeeklySchedule;
 
 import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.LocalTime;
-import java.util.*;
+import java.util.List;
+import java.util.Objects;
 import java.util.stream.Collectors;
 
 /**
@@ -37,7 +39,7 @@ public class SchedulePrinter {
 
         List<Assignment> assignments = schedule.getAssignmentsFor(day);
 
-        if (assignments.isEmpty()){
+        if (assignments.isEmpty()) {
             return;
         }
 
@@ -50,11 +52,11 @@ public class SchedulePrinter {
         System.out.println(day + " " + date);
         printHeader(skills);
 
-        for(int minute = minMinute; minute <maxMinute; minute += SLOT_MINUTES) {
+        for (int minute = minMinute; minute < maxMinute; minute += SLOT_MINUTES) {
             StringBuilder row = new StringBuilder();
             row.append(String.format("%-6s | ", formatMinute(minute)));
 
-            for(Skill skill : skills) {
+            for (Skill skill : skills) {
                 String employeeName = findEmployeeName(assignments, day, minute, skill);
                 row.append(String.format("%-10s| ", employeeName));
             }
@@ -62,6 +64,7 @@ public class SchedulePrinter {
             System.out.println(row);
         }
     }
+
     private List<Skill> collectSkills(List<Assignment> assignments) {
         return assignments.stream()
                 .map(a -> a.getSlot().getRequiredSkill())
@@ -72,13 +75,15 @@ public class SchedulePrinter {
     private int findMinMinute(List<Assignment> assignments) {
         return assignments.stream()
                 .mapToInt(a -> toMinute(a.getSlot().getRange().getStart()))
-                .min().orElse(0);
+                .min()
+                .orElse(0);
     }
 
     private int findMaxMinute(List<Assignment> assignments) {
         return assignments.stream()
-                .mapToInt(a-> normalizedEndMinute(a.getSlot().getRange()))
-                .max().orElse(0);
+                .mapToInt(a -> normalizedEndMinute(a.getSlot().getRange()))
+                .max()
+                .orElse(0);
     }
 
     private void printHeader(List<Skill> skills) {
@@ -118,10 +123,10 @@ public class SchedulePrinter {
 
         int adjustedMinute = minute;
 
-        //nel caso i minuti superano mezzanotte
         if (range.crossesMidnight() && minute < toMinute(range.getEnd())) {
-            adjustedMinute += 24*60;
+            adjustedMinute += 24 * 60;
         }
+
         return adjustedMinute >= start && adjustedMinute < end;
     }
 
@@ -131,11 +136,11 @@ public class SchedulePrinter {
 
     private int normalizedEndMinute(TimeRange range) {
         int end = toMinute(range.getEnd());
-        return range.crossesMidnight() ? end + 24*60 : end;
+        return range.crossesMidnight() ? end + 24 * 60 : end;
     }
 
     private String formatMinute(int minute) {
-        int normalized = minute % (24*60);
+        int normalized = minute % (24 * 60);
         int hour = normalized / 60;
         int min = normalized % 60;
         return String.format("%02d:%02d", hour, min);

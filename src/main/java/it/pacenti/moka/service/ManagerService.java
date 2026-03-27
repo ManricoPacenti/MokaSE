@@ -277,4 +277,17 @@ public class ManagerService {
         Objects.requireNonNull(employee, "Employee cannot be null");
         employeeRepository.save(employee);
     }
+
+    public void removeSkillFromEmployee(String employeeName, Skill skill) {
+        Objects.requireNonNull(employeeName, "Employee name cannot be null");
+        Objects.requireNonNull(skill, "Skill cannot be null");
+
+        Employee employee = employeeRepository.findByName(employeeName)
+                .orElseThrow(() -> new IllegalArgumentException(
+                        "Employee not found: " + employeeName
+                ));
+
+        employee.removeSkill(skill);
+        employeeRepository.save(employee);
+    }
 }

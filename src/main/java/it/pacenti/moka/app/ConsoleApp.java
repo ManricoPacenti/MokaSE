@@ -25,6 +25,13 @@ public class ConsoleApp {
 
         Path dataDirectory = Paths.get("data");
 
+        try {
+            Files.createDirectories(dataDirectory);
+        } catch (IOException e) {
+            System.err.println("Failed to create data directory: " + e.getMessage());
+            return;
+        }
+
         EmployeeRepository employeeRepository =
                 new JsonEmployeeRepository(dataDirectory.resolve("employees.json"));
 

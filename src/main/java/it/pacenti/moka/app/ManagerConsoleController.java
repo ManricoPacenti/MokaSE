@@ -14,6 +14,7 @@ import it.pacenti.moka.scheduling.WeeklySchedule;
 import it.pacenti.moka.scheduling.WeeklyScheduleTemplate;
 import it.pacenti.moka.service.ManagerService;
 import it.pacenti.moka.view.SchedulePrinter;
+import it.pacenti.moka.view.TemplatePrinter;
 
 import java.time.DayOfWeek;
 import java.time.LocalDate;
@@ -27,6 +28,7 @@ public class ManagerConsoleController {
     private final ConsoleIO io;
     private final ManagerService managerService;
     private final SchedulePrinter schedulePrinter;
+    private final TemplatePrinter templatePrinter;
 
     private WeeklyScheduleTemplate currentTemplate;
     private WeeklySchedule currentSchedule;
@@ -35,6 +37,7 @@ public class ManagerConsoleController {
         this.io = io;
         this.managerService = managerService;
         this.schedulePrinter = new SchedulePrinter();
+        this.templatePrinter = new TemplatePrinter();
     }
 
     public void run() {
@@ -43,23 +46,16 @@ public class ManagerConsoleController {
         io.printHeader("MOKA - MANAGER CONSOLE");
 
         while (running) {
-            printMenu();
+            printMainMenu();
             int choice = io.readInt("Choose an option: ");
 
             try {
                 switch (choice) {
-                    case 1 -> createEmployee();
-                    case 2 -> listEmployees();
-                    case 3 -> addSkillToEmployee();
-                    case 4 -> addWeeklyTimeOff();
-                    case 5 -> createLeaveRequest();
-                    case 6 -> viewPendingRequests();
-                    case 7 -> processLeaveRequest();
-                    case 8 -> createWeeklyTemplate();
-                    case 9 -> addSlotToTemplate();
-                    case 10 -> generateSchedule();
-                    case 11 -> printCurrentSchedule();
-                    case 12 -> {
+                    case 1 -> runEmployeeManagementMenu();
+                    case 2 -> runLeaveRequestManagementMenu();
+                    case 3 -> runTemplateManagementMenu();
+                    case 4 -> runScheduleManagementMenu();
+                    case 5 -> {
                         running = false;
                         io.println("Exiting Moka Console. Goodbye.");
                     }
@@ -75,21 +71,150 @@ public class ManagerConsoleController {
         }
     }
 
-    private void printMenu() {
+    private void printMainMenu() {
         io.printSection("Main Menu");
-        io.println("1.  Create employee");
-        io.println("2.  List employees");
-        io.println("3.  Add skill to employee");
-        io.println("4.  Add weekly unavailability");
-        io.println("5.  Create leave request");
-        io.println("6.  View pending leave requests");
-        io.println("7.  Approve / reject leave request");
-        io.println("8.  Create weekly template");
-        io.println("9.  Add slot to template");
-        io.println("10. Generate weekly schedule");
-        io.println("11. Print current schedule");
-        io.println("12. Exit");
+        io.println("1. Employee management");
+        io.println("2. Leave request management");
+        io.println("3. Template management");
+        io.println("4. Schedule management");
+        io.println("5. Exit");
         io.println();
+    }
+
+    private void runEmployeeManagementMenu() {
+        boolean back = false;
+
+        while (!back) {
+            io.printSection("Employee Management");
+            io.println("1. Create employee");
+            io.println("2. List employees");
+            io.println("3. View employee details");
+            io.println("4. Add or update skill");
+            io.println("5. Remove skill");
+            io.println("6. Add weekly unavailability");
+            io.println("7. Add full day off");
+            io.println("8. Create leave request");
+            io.println("9. Back");
+            io.println();
+
+            int choice = io.readInt("Choose an option: ");
+
+            try {
+                switch (choice) {
+                    case 1 -> createEmployee();
+                    case 2 -> listEmployees();
+                    case 3 -> viewEmployeeDetails();
+                    case 4 -> addOrUpdateSkillToEmployee();
+                    case 5 -> removeSkillFromEmployee();
+                    case 6 -> addWeeklyTimeOff();
+                    case 7 -> addFullDayOff();
+                    case 8 -> createLeaveRequest();
+                    case 9 -> back = true;
+                    default -> io.println("Unknown option.");
+                }
+            } catch (Exception ex) {
+                io.println("Operation failed: " + ex.getMessage());
+            }
+
+            if (!back) {
+                io.waitForEnter();
+            }
+        }
+    }
+
+    private void runLeaveRequestManagementMenu() {
+        boolean back = false;
+
+        while (!back) {
+            io.printSection("Leave Request Management");
+            io.println("1. View pending leave requests");
+            io.println("2. Approve leave request");
+            io.println("3. Reject leave request");
+            io.println("4. Back");
+            io.println();
+
+            int choice = io.readInt("Choose an option: ");
+
+            try {
+                switch (choice) {
+                    case 1 -> viewPendingRequests();
+                    case 2 -> approveLeaveRequest();
+                    case 3 -> rejectLeaveRequest();
+                    case 4 -> back = true;
+                    default -> io.println("Unknown option.");
+                }
+            } catch (Exception ex) {
+                io.println("Operation failed: " + ex.getMessage());
+            }
+
+            if (!back) {
+                io.waitForEnter();
+            }
+        }
+    }
+
+    private void runTemplateManagementMenu() {
+        boolean back = false;
+
+        while (!back) {
+            io.printSection("Template Management");
+            io.println("1. Create new template");
+            io.println("2. View current template");
+            io.println("3. Add slot to template");
+            io.println("4. Remove slot from template");
+            io.println("5. Clear template");
+            io.println("6. Back");
+            io.println();
+
+            int choice = io.readInt("Choose an option: ");
+
+            try {
+                switch (choice) {
+                    case 1 -> createWeeklyTemplate();
+                    case 2 -> viewCurrentTemplate();
+                    case 3 -> addSlotToTemplate();
+                    case 4 -> removeSlotFromTemplate();
+                    case 5 -> clearCurrentTemplate();
+                    case 6 -> back = true;
+                    default -> io.println("Unknown option.");
+                }
+            } catch (Exception ex) {
+                io.println("Operation failed: " + ex.getMessage());
+            }
+
+            if (!back) {
+                io.waitForEnter();
+            }
+        }
+    }
+
+    private void runScheduleManagementMenu() {
+        boolean back = false;
+
+        while (!back) {
+            io.printSection("Schedule Management");
+            io.println("1. Generate weekly schedule");
+            io.println("2. Print current schedule");
+            io.println("3. Back");
+            io.println();
+
+            int choice = io.readInt("Choose an option: ");
+
+            try {
+                switch (choice) {
+                    case 1 -> generateSchedule();
+                    case 2 -> printCurrentSchedule();
+                    case 3 -> back = true;
+                    default -> io.println("Unknown option.");
+                }
+            } catch (Exception ex) {
+                io.println("Operation failed: " + ex.getMessage());
+            }
+
+            if (!back) {
+                io.waitForEnter();
+            }
+        }
     }
 
     private void createEmployee() {
@@ -108,10 +233,7 @@ public class ManagerConsoleController {
     private void listEmployees() {
         io.printSection("Employees");
 
-        List<Employee> employees = managerService.getAllEmployees()
-                .stream()
-                .sorted(Comparator.comparing(Employee::getName, String.CASE_INSENSITIVE_ORDER))
-                .toList();
+        List<Employee> employees = getSortedEmployees();
 
         if (employees.isEmpty()) {
             io.println("No employees found.");
@@ -120,54 +242,96 @@ public class ManagerConsoleController {
 
         int index = 1;
         for (Employee employee : employees) {
-            io.println(index++ + ". " + formatEmployee(employee));
+            io.println(index++ + ". " + formatEmployeeSummary(employee));
         }
     }
 
-    private void addSkillToEmployee() {
-        io.printSection("Add Skill To Employee");
+    private void viewEmployeeDetails() {
+        io.printSection("Employee Details");
 
         Employee employee = selectEmployee();
-        boolean adding = true;
 
-        while (adding) {
+        io.println("Name: " + employee.getName());
+        io.println("Priority: " + employee.getPriority());
+        io.println("Agreed weekly hours: " + employee.getAgreedHours());
+        io.println("Hourly cost: " + employee.getHourlyCost());
+        io.println("Skills: " + formatSkills(employee));
+        io.println("Weekly time off: " + formatWeeklyTimeOff(employee));
+        io.println("Approved leaves: " + formatApprovedLeaves(employee));
+    }
+
+    private void addOrUpdateSkillToEmployee() {
+        io.printSection("Add Or Update Skill");
+
+        Employee employee = selectEmployee();
+        boolean editing = true;
+
+        while (editing) {
             Skill skill = chooseSkill();
             Proficiency proficiency = chooseProficiency();
 
             managerService.addSkillToEmployee(employee.getName(), skill, proficiency);
 
-            io.println("Skill updated successfully for " + employee.getName());
-            adding = io.confirm("Add another skill to the same employee?");
+            io.println("Skill saved successfully for " + employee.getName());
+            editing = io.confirm("Add or update another skill for the same employee?");
         }
+    }
+
+    private void removeSkillFromEmployee() {
+        io.printSection("Remove Skill");
+
+        Employee employee = selectEmployee();
+
+        List<EmployeeSkill> skills = employee.getSkills()
+                .asCollection()
+                .stream()
+                .sorted(Comparator.comparing(skill -> skill.getSkill().name()))
+                .toList();
+
+        if (skills.isEmpty()) {
+            io.println("This employee has no skills to remove.");
+            return;
+        }
+
+        for (int i = 0; i < skills.size(); i++) {
+            io.println((i + 1) + ". " + formatSkill(skills.get(i)));
+        }
+
+        int selected = io.readInt("Select skill number to remove: ");
+
+        if (selected < 1 || selected > skills.size()) {
+            throw new IllegalArgumentException("Invalid skill selection.");
+        }
+
+        Skill skillToRemove = skills.get(selected - 1).getSkill();
+        managerService.removeSkillFromEmployee(employee.getName(), skillToRemove);
+
+        io.println("Skill removed successfully from " + employee.getName());
     }
 
     private void addWeeklyTimeOff() {
         io.printSection("Add Weekly Unavailability");
 
         Employee employee = selectEmployee();
+        DayOfWeek day = chooseDayOfWeek();
+        LocalTime start = io.readTime("Start time");
+        LocalTime end = io.readTime("End time");
 
-        io.println("1. Add full day off");
-        io.println("2. Add time range off");
+        TimeRange range = new TimeRange(start, end);
+        managerService.addWeeklyTimeOff(employee.getName(), day, range);
 
-        int choice = io.readInt("Choose unavailability type: ");
+        io.println("Weekly time range off added successfully for " + employee.getName());
+    }
+
+    private void addFullDayOff() {
+        io.printSection("Add Full Day Off");
+
+        Employee employee = selectEmployee();
         DayOfWeek day = chooseDayOfWeek();
 
-        switch (choice) {
-            case 1 -> {
-                managerService.addFullDayOff(employee.getName(), day);
-                io.println("Full day off added successfully for " + employee.getName());
-            }
-            case 2 -> {
-                LocalTime start = io.readTime("Start time");
-                LocalTime end = io.readTime("End time");
+        managerService.addFullDayOff(employee.getName(), day);
 
-                TimeRange range = new TimeRange(start, end);
-                managerService.addWeeklyTimeOff(employee.getName(), day, range);
-
-                io.println("Weekly time range off added successfully for " + employee.getName());
-            }
-            default -> throw new IllegalArgumentException("Invalid unavailability type selection.");
-        }
+        io.println("Full day off added successfully for " + employee.getName());
     }
 
     private void createLeaveRequest() {
@@ -205,8 +369,8 @@ public class ManagerConsoleController {
         }
     }
 
-    private void processLeaveRequest() {
-        io.printSection("Approve / Reject Leave Request");
+    private void approveLeaveRequest() {
+        io.printSection("Approve Leave Request");
 
         List<LeaveRequest> pendingRequests = managerService.getPendingRequests();
 
@@ -219,16 +383,30 @@ public class ManagerConsoleController {
             io.println(formatLeaveRequest(request));
         }
 
-        int requestId = io.readInt("Request id: ");
-        boolean approve = io.confirm("Approve this request?");
+        int requestId = io.readInt("Request id to approve: ");
+        managerService.approveRequest(requestId);
 
-        if (approve) {
-            managerService.approveRequest(requestId);
-            io.println("Request approved.");
-        } else {
-            managerService.rejectRequest(requestId);
-            io.println("Request rejected.");
+        io.println("Request approved.");
+    }
+
+    private void rejectLeaveRequest() {
+        io.printSection("Reject Leave Request");
+
+        List<LeaveRequest> pendingRequests = managerService.getPendingRequests();
+
+        if (pendingRequests.isEmpty()) {
+            io.println("No pending requests.");
+            return;
         }
+
+        for (LeaveRequest request : pendingRequests) {
+            io.println(formatLeaveRequest(request));
+        }
+
+        int requestId = io.readInt("Request id to reject: ");
+        managerService.rejectRequest(requestId);
+
+        io.println("Request rejected.");
     }
 
     private void createWeeklyTemplate() {
@@ -239,6 +417,19 @@ public class ManagerConsoleController {
         currentSchedule = null;
 
         io.println("Weekly template created for week starting " + weekStart);
+    }
+
+    private void viewCurrentTemplate() {
+        io.printSection("Current Template");
+
+        ensureTemplateExists();
+
+        if (currentTemplate.isEmpty()) {
+            io.println("Current template is empty.");
+            return;
+        }
+
+        templatePrinter.printWeeklyGrid(currentTemplate);
     }
 
     private void addSlotToTemplate() {
@@ -262,10 +453,67 @@ public class ManagerConsoleController {
         }
     }
 
+    private void removeSlotFromTemplate() {
+        io.printSection("Remove Slot From Current Template");
+
+        ensureTemplateExists();
+
+        if (currentTemplate.isEmpty()) {
+            io.println("Current template is empty.");
+            return;
+        }
+
+        List<ShiftSlot> sortedSlots = templatePrinter.getSortedSlots(currentTemplate);
+        templatePrinter.printIndexedList(currentTemplate);
+
+        int selected = io.readInt("Select slot number to remove: ");
+
+        if (selected < 1 || selected > sortedSlots.size()) {
+            throw new IllegalArgumentException("Invalid slot selection.");
+        }
+
+        ShiftSlot slotToRemove = sortedSlots.get(selected - 1);
+        currentTemplate.removeSlot(slotToRemove);
+        currentSchedule = null;
+
+        io.println("Slot removed successfully.");
+    }
+
+    private void clearCurrentTemplate() {
+        io.printSection("Clear Current Template");
+
+        ensureTemplateExists();
+
+        if (currentTemplate.isEmpty()) {
+            io.println("Current template is already empty.");
+            return;
+        }
+
+        boolean confirmed = io.confirm("Are you sure you want to clear the current template?");
+
+        if (!confirmed) {
+            io.println("Operation cancelled.");
+            return;
+        }
+
+        currentTemplate.clear();
+        currentSchedule = null;
+
+        io.println("Current template cleared successfully.");
+    }
+
     private void generateSchedule() {
         io.printSection("Generate Weekly Schedule");
 
         ensureTemplateExists();
+
+        if (currentTemplate.isEmpty()) {
+            throw new IllegalStateException("Current template is empty.");
+        }
+
+        if (managerService.getAllEmployees().isEmpty()) {
+            throw new IllegalStateException("No employees available.");
+        }
 
         currentSchedule = managerService.generateSchedule(currentTemplate);
 
@@ -283,11 +531,15 @@ public class ManagerConsoleController {
         schedulePrinter.printWeeklyGrid(currentSchedule);
     }
 
-    private Employee selectEmployee() {
-        List<Employee> employees = managerService.getAllEmployees()
+    private List<Employee> getSortedEmployees() {
+        return managerService.getAllEmployees()
                 .stream()
                 .sorted(Comparator.comparing(Employee::getName, String.CASE_INSENSITIVE_ORDER))
                 .toList();
+    }
+
+    private Employee selectEmployee() {
+        List<Employee> employees = getSortedEmployees();
 
         if (employees.isEmpty()) {
             throw new IllegalStateException("No employees available.");
@@ -349,25 +601,24 @@ public class ManagerConsoleController {
         return values[selected - 1];
     }
 
-    private String formatEmployee(Employee employee) {
-        StringBuilder builder = new StringBuilder();
+    private String formatEmployeeSummary(Employee employee) {
+        return employee.getName()
+                + " | priority=" + employee.getPriority()
+                + " | agreedHours=" + employee.getAgreedHours()
+                + " | hourlyCost=" + employee.getHourlyCost();
+    }
 
-        builder.append(employee.getName())
-                .append(" | priority=").append(employee.getPriority())
-                .append(" | agreedHours=").append(employee.getAgreedHours())
-                .append(" | hourlyCost=").append(employee.getHourlyCost());
+    private String formatSkills(Employee employee) {
+        if (employee.getSkills().isEmpty()) {
+            return "none";
+        }
 
-        String skillsText = employee.getSkills().asCollection()
+        return employee.getSkills().asCollection()
                 .stream()
                 .map(this::formatSkill)
                 .sorted()
                 .reduce((a, b) -> a + ", " + b)
                 .orElse("none");
-
-        builder.append(" | skills=").append(skillsText);
-        builder.append(" | weeklyTimeOff=").append(formatWeeklyTimeOff(employee));
-
-        return builder.toString();
     }
 
     private String formatSkill(EmployeeSkill skill) {
@@ -424,6 +675,19 @@ public class ManagerConsoleController {
         }
 
         return builder.toString();
+    }
+
+    private String formatApprovedLeaves(Employee employee) {
+        if (employee.getLeaveCalendar().getLeaves().isEmpty()) {
+            return "none";
+        }
+
+        return employee.getLeaveCalendar().getLeaves()
+                .stream()
+                .map(leave -> leave.getDate() + " " + leave.getRange() + " " + leave.getType())
+                .sorted()
+                .reduce((a, b) -> a + " | " + b)
+                .orElse("none");
     }
 
     private String formatLeaveRequest(LeaveRequest request) {

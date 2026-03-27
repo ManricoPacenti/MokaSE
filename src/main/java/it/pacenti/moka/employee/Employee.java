@@ -76,6 +76,14 @@ public class Employee {
         return skills.hasSkill(skill);
     }
 
+    public void addOrUpdateSkill(Skill skill, Proficiency proficiency) {
+        skills.addOrUpdate(skill, proficiency);
+    }
+
+    public void removeSkill(Skill skill) {
+        skills.remove(skill);
+    }
+
     public WeeklyAvailability getAvailability() {
         return availability;
     }

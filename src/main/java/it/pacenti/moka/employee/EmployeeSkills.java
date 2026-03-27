@@ -14,14 +14,14 @@ public class EmployeeSkills {
     private final Map<Skill, EmployeeSkill> skills;
 
     /**
-     * Creates an empty set of employee skills
+     * Creates an empty set of employee skills.
      */
     public EmployeeSkills() {
-
         this.skills = new EnumMap<>(Skill.class);
     }
 
-    /**checks if the employee has the given skill.
+    /**
+     * Checks if the employee has the given skill.
      *
      * @return true if the skill is present
      */
@@ -31,9 +31,9 @@ public class EmployeeSkills {
     }
 
     /**
-     * check the proficiency of a given skill
+     * Checks the proficiency of a given skill.
      *
-     * @return the proficiency if the skill exist, null otherwise
+     * @return the proficiency if the skill exists, null otherwise
      */
     public Proficiency getProficiency(Skill skill) {
         Objects.requireNonNull(skill, "Skill cannot be null");
@@ -42,7 +42,7 @@ public class EmployeeSkills {
     }
 
     /**
-     * Adds a new skill or updates its proficiency
+     * Adds a new skill or updates its proficiency.
      *
      * @param skill the skill type
      * @param proficiency the proficiency level
@@ -55,18 +55,24 @@ public class EmployeeSkills {
     }
 
     /**
-     * removes a skill from the employee
+     * Removes a skill from the employee.
      */
     public void remove(Skill skill) {
-        Objects.requireNonNull(skill, "skill cannot be null");
+        Objects.requireNonNull(skill, "Skill cannot be null");
         skills.remove(skill);
     }
 
     /**
-     * Returns all employee skills as an unmodifiable collection
+     * @return true if the employee has no skills
+     */
+    public boolean isEmpty() {
+        return skills.isEmpty();
+    }
+
+    /**
+     * Returns all employee skills as an unmodifiable collection.
      */
     public Collection<EmployeeSkill> asCollection() {
-
         return Collections.unmodifiableCollection(skills.values());
     }
 
