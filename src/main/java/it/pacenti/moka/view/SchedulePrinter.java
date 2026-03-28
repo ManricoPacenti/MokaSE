@@ -57,7 +57,9 @@ public class SchedulePrinter {
 
         if (!printedSomething) {
             System.out.println("Schedule contains no assignments.");
+            return;
         }
+        printHoursSummary(schedule);
     }
 
     public void printWeeklyGrid(WeeklySchedule schedule, WeeklyScheduleTemplate template) {
@@ -76,7 +78,9 @@ public class SchedulePrinter {
 
         if (!printedSomething) {
             System.out.println("Template contains no slots.");
+            return;
         }
+        printHoursSummary(schedule);
     }
 
     public boolean printDayGrid(WeeklySchedule schedule, DayOfWeek day) {
@@ -447,6 +451,33 @@ public class SchedulePrinter {
 
         public String label() {
             return laneIndex == 0 ? skill.name() : skill.name() + "#" + (laneIndex + 1);
+        }
+    }
+
+    private void printHoursSummary(WeeklySchedule schedule) {
+        System.out.println();
+        System.out.println("------------------------------------------------------------");
+        System.out.println("HOURS SUMMARY");
+        System.out.println("------------------------------------------------------------");
+
+        List<Employee> uniqueEmployees = schedule.getAssignments().stream()
+                .map(Assignment::getEmployee)
+                .distinct()
+                .sorted(Comparator.comparing(Employee::getName))
+                .toList();
+
+        for (Employee employee : uniqueEmployees) {
+            double assignedHours = schedule.getAssignedHours(employee);
+            double agreedHours = employee.getAgreedHours();
+            double missingHours = Math.max(0, agreedHours - assignedHours);
+
+            System.out.printf(
+                    "%-15s assigned: %5.1fh   agreed: %5.1fh   missing: %5.1fh%n",
+                    employee.getName(),
+                    assignedHours,
+                    agreedHours,
+                    missingHours
+            );
         }
     }
 }
