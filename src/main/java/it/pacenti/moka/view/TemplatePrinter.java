@@ -10,19 +10,26 @@ import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Objects;
 import java.util.stream.Collectors;
 
 /**
  * Prints a weekly schedule template in a grid format:
- * rows = time slots
- * columns = required skills
+ * rows = time windows
+ * columns = actual required positions
  * cells = required skill label
+ *
+ * Column generation rule:
+ * - slots with the same skill share the same column if they do not overlap
+ * - overlapping slots with the same skill are placed on separate lanes
  */
 public class TemplatePrinter {
 
     private static final int SLOT_MINUTES = 30;
+    private static final int TIME_COLUMN_WIDTH = 13;
+    private static final int CELL_WIDTH = 14;
 
     public void printWeeklyGrid(WeeklyScheduleTemplate template) {
         Objects.requireNonNull(template, "Template cannot be null");
@@ -32,45 +39,58 @@ public class TemplatePrinter {
             return;
         }
 
+        boolean printedSomething = false;
+
         for (DayOfWeek day : DayOfWeek.values()) {
-            printDayGrid(template, day);
-            System.out.println();
+            boolean printedDay = printDayGrid(template, day);
+            if (printedDay) {
+                System.out.println();
+                printedSomething = true;
+            }
+        }
+
+        if (!printedSomething) {
+            System.out.println("Current template is empty.");
         }
     }
 
-    public void printDayGrid(WeeklyScheduleTemplate template, DayOfWeek day) {
+    public boolean printDayGrid(WeeklyScheduleTemplate template, DayOfWeek day) {
         Objects.requireNonNull(template, "Template cannot be null");
         Objects.requireNonNull(day, "Day cannot be null");
 
         List<ShiftSlot> slots = template.getSlots()
                 .stream()
                 .filter(slot -> slot.getDay().equals(day))
+                .sorted(slotComparator())
                 .toList();
 
         if (slots.isEmpty()) {
-            return;
+            return false;
         }
 
-        LocalDate date = resolveDate(template.getWeekStart(), day);
+        IdentityHashMap<ShiftSlot, Integer> laneBySlot = assignLanes(slots);
+        List<SkillColumn> columns = buildColumns(slots, laneBySlot);
 
-        List<Skill> skills = collectSkills(slots);
         int minMinute = findMinMinute(slots);
         int maxMinute = findMaxMinute(slots);
+        LocalDate date = resolveDate(template.getWeekStart(), day);
 
         System.out.println(day + " " + date);
-        printHeader(skills);
+        printHeader(columns);
 
         for (int minute = minMinute; minute < maxMinute; minute += SLOT_MINUTES) {
             StringBuilder row = new StringBuilder();
-            row.append(String.format("%-6s | ", formatMinute(minute)));
+            row.append(padRight(formatTimeWindow(minute), TIME_COLUMN_WIDTH)).append(" | ");
 
-            for (Skill skill : skills) {
-                String label = findSkillLabel(slots, day, minute, skill);
-                row.append(String.format("%-10s| ", label));
+            for (SkillColumn column : columns) {
+                String label = findSkillLabel(slots, minute, column, laneBySlot);
+                row.append(padRight(label, CELL_WIDTH)).append(" | ");
             }
 
             System.out.println(row);
         }
+
+        return true;
     }
 
     public void printIndexedList(WeeklyScheduleTemplate template) {
@@ -107,19 +127,124 @@ public class TemplatePrinter {
 
         return template.getSlots()
                 .stream()
-                .sorted(Comparator
-                        .comparing(ShiftSlot::getDay)
-                        .thenComparing(slot -> slot.getRange().getStart())
-                        .thenComparing(slot -> slot.getRange().getEnd())
-                        .thenComparing(slot -> slot.getRequiredSkill().name()))
+                .sorted(slotComparator())
                 .collect(Collectors.toCollection(ArrayList::new));
     }
 
-    private List<Skill> collectSkills(List<ShiftSlot> slots) {
-        return slots.stream()
-                .map(ShiftSlot::getRequiredSkill)
-                .distinct()
-                .collect(Collectors.toList());
+    private IdentityHashMap<ShiftSlot, Integer> assignLanes(List<ShiftSlot> slots) {
+        IdentityHashMap<ShiftSlot, Integer> laneBySlot = new IdentityHashMap<>();
+
+        for (ShiftSlot slot : slots) {
+            int lane = findFirstAvailableLane(slot, laneBySlot);
+            laneBySlot.put(slot, lane);
+        }
+
+        return laneBySlot;
+    }
+
+    private int findFirstAvailableLane(ShiftSlot target, IdentityHashMap<ShiftSlot, Integer> laneBySlot) {
+        int lane = 0;
+
+        while (true) {
+            boolean occupied = false;
+
+            for (ShiftSlot existing : laneBySlot.keySet()) {
+                if (existing.getRequiredSkill() != target.getRequiredSkill()) {
+                    continue;
+                }
+
+                if (laneBySlot.get(existing) != lane) {
+                    continue;
+                }
+
+                if (existing.overlaps(target)) {
+                    occupied = true;
+                    break;
+                }
+            }
+
+            if (!occupied) {
+                return lane;
+            }
+
+            lane++;
+        }
+    }
+
+    private List<SkillColumn> buildColumns(List<ShiftSlot> slots, IdentityHashMap<ShiftSlot, Integer> laneBySlot) {
+        List<SkillColumn> columns = new ArrayList<>();
+
+        for (Skill skill : collectOrderedSkills(slots)) {
+            int laneCount = findLaneCountForSkill(skill, slots, laneBySlot);
+
+            for (int lane = 0; lane < laneCount; lane++) {
+                columns.add(new SkillColumn(skill, lane));
+            }
+        }
+
+        return columns;
+    }
+
+    private List<Skill> collectOrderedSkills(List<ShiftSlot> slots) {
+        List<Skill> orderedSkills = new ArrayList<>();
+
+        for (ShiftSlot slot : slots) {
+            if (!orderedSkills.contains(slot.getRequiredSkill())) {
+                orderedSkills.add(slot.getRequiredSkill());
+            }
+        }
+
+        return orderedSkills;
+    }
+
+    private int findLaneCountForSkill(Skill skill,
+                                      List<ShiftSlot> slots,
+                                      IdentityHashMap<ShiftSlot, Integer> laneBySlot) {
+        int maxLane = -1;
+
+        for (ShiftSlot slot : slots) {
+            if (slot.getRequiredSkill() == skill) {
+                maxLane = Math.max(maxLane, laneBySlot.get(slot));
+            }
+        }
+
+        return maxLane + 1;
+    }
+
+    private void printHeader(List<SkillColumn> columns) {
+        StringBuilder header = new StringBuilder();
+        header.append(padRight("TIME", TIME_COLUMN_WIDTH)).append(" | ");
+
+        for (SkillColumn column : columns) {
+            header.append(padRight(column.label(), CELL_WIDTH)).append(" | ");
+        }
+
+        System.out.println(header);
+        System.out.println("-".repeat(header.length()));
+    }
+
+    private String findSkillLabel(List<ShiftSlot> slots,
+                                  int minute,
+                                  SkillColumn column,
+                                  IdentityHashMap<ShiftSlot, Integer> laneBySlot) {
+        for (ShiftSlot slot : slots) {
+            if (slot.getRequiredSkill() != column.skill()) {
+                continue;
+            }
+
+            Integer lane = laneBySlot.get(slot);
+            if (lane == null || lane != column.laneIndex()) {
+                continue;
+            }
+
+            if (!containsMinute(slot.getRange(), minute)) {
+                continue;
+            }
+
+            return shorten(column.skill().name(), CELL_WIDTH);
+        }
+
+        return "";
     }
 
     private int findMinMinute(List<ShiftSlot> slots) {
@@ -136,32 +261,12 @@ public class TemplatePrinter {
                 .orElse(0);
     }
 
-    private void printHeader(List<Skill> skills) {
-        StringBuilder header = new StringBuilder();
-        header.append(String.format("%-6s | ", "TIME"));
-
-        for (Skill skill : skills) {
-            header.append(String.format("%-10s| ", skill));
-        }
-
-        System.out.println(header);
-        System.out.println("-".repeat(header.length()));
-    }
-
-    private String findSkillLabel(List<ShiftSlot> slots, DayOfWeek day, int minute, Skill skill) {
-        for (ShiftSlot slot : slots) {
-            if (!slot.getDay().equals(day)) {
-                continue;
-            }
-            if (slot.getRequiredSkill() != skill) {
-                continue;
-            }
-            if (containsMinute(slot.getRange(), minute)) {
-                return skill.name();
-            }
-        }
-
-        return "";
+    private Comparator<ShiftSlot> slotComparator() {
+        return Comparator
+                .comparing(ShiftSlot::getDay)
+                .thenComparing(slot -> slot.getRange().getStart())
+                .thenComparing(slot -> slot.getRange().getEnd())
+                .thenComparing(slot -> slot.getRequiredSkill().name());
     }
 
     private boolean containsMinute(TimeRange range, int minute) {
@@ -186,6 +291,10 @@ public class TemplatePrinter {
         return range.crossesMidnight() ? end + 24 * 60 : end;
     }
 
+    private String formatTimeWindow(int minute) {
+        return formatMinute(minute) + "-" + formatMinute(minute + SLOT_MINUTES);
+    }
+
     private String formatMinute(int minute) {
         int normalized = minute % (24 * 60);
         int hour = normalized / 60;
@@ -198,5 +307,56 @@ public class TemplatePrinter {
         int targetValue = targetDay.getValue();
         int offset = targetValue - startDayValue;
         return weekStart.plusDays(offset);
+    }
+
+    private String padRight(String text, int width) {
+        String safe = text == null ? "" : text;
+        if (safe.length() > width) {
+            safe = shorten(safe, width);
+        }
+        return String.format("%-" + width + "s", safe);
+    }
+
+    private String shorten(String text, int maxLength) {
+        if (text == null) {
+            return "";
+        }
+
+        if (text.length() <= maxLength) {
+            return text;
+        }
+
+        if (maxLength <= 3) {
+            return text.substring(0, maxLength);
+        }
+
+        return text.substring(0, maxLength - 3) + "...";
+    }
+
+    /**
+     * Represents one visible column in the grid.
+     * laneIndex = 0 means the primary lane for that skill.
+     * laneIndex > 0 means an additional overlapping lane.
+     */
+    private static final class SkillColumn {
+        private final Skill skill;
+        private final int laneIndex;
+
+        private SkillColumn(Skill skill, int laneIndex) {
+            this.skill = Objects.requireNonNull(skill, "Skill cannot be null");
+            this.laneIndex = laneIndex;
+        }
+
+        public Skill skill() {
+            return skill;
+        }
+
+        public int laneIndex() {
+            return laneIndex;
+        }
+
+        public String label() {
+            return laneIndex == 0 ? skill.name() : skill.name() + "#" + (laneIndex + 1);
+        }
     }
 }

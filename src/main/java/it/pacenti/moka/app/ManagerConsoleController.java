@@ -8,6 +8,7 @@ import it.pacenti.moka.employee.EmployeeSkill;
 import it.pacenti.moka.employee.Priority;
 import it.pacenti.moka.employee.Proficiency;
 import it.pacenti.moka.employee.Skill;
+import it.pacenti.moka.repository.TemplateRepository;
 import it.pacenti.moka.scheduling.ShiftSlot;
 import it.pacenti.moka.scheduling.TimeRange;
 import it.pacenti.moka.scheduling.WeeklySchedule;
@@ -27,15 +28,22 @@ public class ManagerConsoleController {
 
     private final ConsoleIO io;
     private final ManagerService managerService;
+    private final TemplateRepository templateRepository;
     private final SchedulePrinter schedulePrinter;
     private final TemplatePrinter templatePrinter;
 
     private WeeklyScheduleTemplate currentTemplate;
     private WeeklySchedule currentSchedule;
+    private String currentTemplateName;
 
-    public ManagerConsoleController(ConsoleIO io, ManagerService managerService) {
+    public ManagerConsoleController(
+            ConsoleIO io,
+            ManagerService managerService,
+            TemplateRepository templateRepository
+    ) {
         this.io = io;
         this.managerService = managerService;
+        this.templateRepository = templateRepository;
         this.schedulePrinter = new SchedulePrinter();
         this.templatePrinter = new TemplatePrinter();
     }
@@ -63,10 +71,6 @@ public class ManagerConsoleController {
                 }
             } catch (Exception ex) {
                 io.println("Operation failed: " + ex.getMessage());
-            }
-
-            if (running) {
-                io.waitForEnter();
             }
         }
     }
@@ -115,10 +119,6 @@ public class ManagerConsoleController {
             } catch (Exception ex) {
                 io.println("Operation failed: " + ex.getMessage());
             }
-
-            if (!back) {
-                io.waitForEnter();
-            }
         }
     }
 
@@ -146,10 +146,6 @@ public class ManagerConsoleController {
             } catch (Exception ex) {
                 io.println("Operation failed: " + ex.getMessage());
             }
-
-            if (!back) {
-                io.waitForEnter();
-            }
         }
     }
 
@@ -163,7 +159,11 @@ public class ManagerConsoleController {
             io.println("3. Add slot to template");
             io.println("4. Remove slot from template");
             io.println("5. Clear template");
-            io.println("6. Back");
+            io.println("6. Save current template");
+            io.println("7. Load saved template");
+            io.println("8. List saved templates");
+            io.println("9. Delete saved template");
+            io.println("10. Back");
             io.println();
 
             int choice = io.readInt("Choose an option: ");
@@ -175,15 +175,15 @@ public class ManagerConsoleController {
                     case 3 -> addSlotToTemplate();
                     case 4 -> removeSlotFromTemplate();
                     case 5 -> clearCurrentTemplate();
-                    case 6 -> back = true;
+                    case 6 -> saveCurrentTemplate();
+                    case 7 -> loadSavedTemplate();
+                    case 8 -> listSavedTemplates();
+                    case 9 -> deleteSavedTemplate();
+                    case 10 -> back = true;
                     default -> io.println("Unknown option.");
                 }
             } catch (Exception ex) {
                 io.println("Operation failed: " + ex.getMessage());
-            }
-
-            if (!back) {
-                io.waitForEnter();
             }
         }
     }
@@ -209,10 +209,6 @@ public class ManagerConsoleController {
                 }
             } catch (Exception ex) {
                 io.println("Operation failed: " + ex.getMessage());
-            }
-
-            if (!back) {
-                io.waitForEnter();
             }
         }
     }
@@ -339,16 +335,29 @@ public class ManagerConsoleController {
 
         Employee employee = selectEmployee();
         LocalDate date = io.readDate("Leave date");
-        LocalTime start = io.readTime("Start time");
-        LocalTime end = io.readTime("End time");
+
+        io.println("Leave mode:");
+        io.println("1. Full day leave");
+        io.println("2. Time range leave");
+        int leaveMode = io.readInt("Choose leave mode: ");
+
+        TimeRange range;
+
+        switch (leaveMode) {
+            case 1 -> range = new TimeRange(LocalTime.of(0, 0), LocalTime.of(23, 59));
+            case 2 -> {
+                LocalTime start = io.readTime("Start time");
+                LocalTime end = io.readTime("End time");
+                range = new TimeRange(start, end);
+            }
+            default -> throw new IllegalArgumentException("Invalid leave mode selection.");
+        }
+
         LeaveType leaveType = chooseLeaveType();
         String note = io.readLine("Optional note (leave blank if none): ");
-
-        TimeRange range = new TimeRange(start, end);
         String normalizedNote = note.isBlank() ? "" : note;
 
         Leave leave = new Leave(date, range, leaveType, normalizedNote);
-
         LeaveRequest request = managerService.createLeaveRequest(employee.getName(), leave);
 
         io.println("Leave request created successfully. Request id: " + request.getId());
@@ -414,6 +423,7 @@ public class ManagerConsoleController {
 
         LocalDate weekStart = io.readDate("Week start date");
         currentTemplate = new WeeklyScheduleTemplate(weekStart);
+        currentTemplateName = null;
         currentSchedule = null;
 
         io.println("Weekly template created for week starting " + weekStart);
@@ -423,6 +433,10 @@ public class ManagerConsoleController {
         io.printSection("Current Template");
 
         ensureTemplateExists();
+
+        if (currentTemplateName != null) {
+            io.println("Current template name: " + currentTemplateName);
+        }
 
         if (currentTemplate.isEmpty()) {
             io.println("Current template is empty.");
@@ -447,6 +461,7 @@ public class ManagerConsoleController {
 
             ShiftSlot slot = new ShiftSlot(day, new TimeRange(start, end), skill);
             currentTemplate.addSlot(slot);
+            currentSchedule = null;
 
             io.println("Slot added successfully to current template.");
             adding = io.confirm("Add another slot to the same template?");
@@ -502,6 +517,119 @@ public class ManagerConsoleController {
         io.println("Current template cleared successfully.");
     }
 
+    private void saveCurrentTemplate() {
+        io.printSection("Save Current Template");
+
+        ensureTemplateExists();
+
+        String defaultHint = currentTemplateName == null ? "" : " [" + currentTemplateName + "]";
+        String input = io.readLine("Template name" + defaultHint + ": ");
+
+        String templateName;
+        if (input.isBlank()) {
+            if (currentTemplateName == null) {
+                throw new IllegalArgumentException("Template name cannot be blank.");
+            }
+            templateName = currentTemplateName;
+        } else {
+            templateName = input.trim();
+        }
+
+        templateRepository.save(templateName, currentTemplate);
+        currentTemplateName = templateName;
+
+        io.println("Template saved successfully as: " + templateName);
+    }
+
+    private void loadSavedTemplate() {
+        io.printSection("Load Saved Template");
+
+        List<String> names = templateRepository.findAllNames();
+
+        if (names.isEmpty()) {
+            io.println("No saved templates found.");
+            return;
+        }
+
+        for (int i = 0; i < names.size(); i++) {
+            io.println((i + 1) + ". " + names.get(i));
+        }
+
+        int selected = io.readInt("Select template number to load: ");
+
+        if (selected < 1 || selected > names.size()) {
+            throw new IllegalArgumentException("Invalid template selection.");
+        }
+
+        String selectedName = names.get(selected - 1);
+
+        WeeklyScheduleTemplate loadedTemplate = templateRepository.findByName(selectedName)
+                .orElseThrow(() -> new IllegalStateException("Template not found: " + selectedName));
+
+        currentTemplate = loadedTemplate;
+        currentTemplateName = selectedName;
+        currentSchedule = null;
+
+        io.println("Template loaded successfully: " + selectedName);
+    }
+
+    private void listSavedTemplates() {
+        io.printSection("Saved Templates");
+
+        List<String> names = templateRepository.findAllNames();
+
+        if (names.isEmpty()) {
+            io.println("No saved templates found.");
+            return;
+        }
+
+        for (int i = 0; i < names.size(); i++) {
+            io.println((i + 1) + ". " + names.get(i));
+        }
+    }
+
+    private void deleteSavedTemplate() {
+        io.printSection("Delete Saved Template");
+
+        List<String> names = templateRepository.findAllNames();
+
+        if (names.isEmpty()) {
+            io.println("No saved templates found.");
+            return;
+        }
+
+        for (int i = 0; i < names.size(); i++) {
+            io.println((i + 1) + ". " + names.get(i));
+        }
+
+        int selected = io.readInt("Select template number to delete: ");
+
+        if (selected < 1 || selected > names.size()) {
+            throw new IllegalArgumentException("Invalid template selection.");
+        }
+
+        String selectedName = names.get(selected - 1);
+        boolean confirmed = io.confirm("Are you sure you want to delete template '" + selectedName + "'?");
+
+        if (!confirmed) {
+            io.println("Operation cancelled.");
+            return;
+        }
+
+        boolean removed = templateRepository.deleteByName(selectedName);
+
+        if (!removed) {
+            io.println("Template not found.");
+            return;
+        }
+
+        if (currentTemplateName != null && selectedName.equalsIgnoreCase(currentTemplateName)) {
+            currentTemplateName = null;
+        }
+
+        io.println("Template deleted successfully.");
+    }
+
     private void generateSchedule() {
         io.printSection("Generate Weekly Schedule");
 
@@ -528,7 +656,11 @@ public class ManagerConsoleController {
             return;
         }
 
-        schedulePrinter.printWeeklyGrid(currentSchedule);
+        if (currentTemplate != null) {
+            schedulePrinter.printWeeklyGrid(currentSchedule, currentTemplate);
+        } else {
+            schedulePrinter.printWeeklyGrid(currentSchedule);
+        }
     }
 
     private List<Employee> getSortedEmployees() {
@@ -561,7 +693,7 @@ public class ManagerConsoleController {
 
     private void ensureTemplateExists() {
         if (currentTemplate == null) {
-            throw new IllegalStateException("Create a weekly template first.");
+            throw new IllegalStateException("Create or load a weekly template first.");
         }
     }
 
@@ -684,18 +816,30 @@ public class ManagerConsoleController {
 
         return employee.getLeaveCalendar().getLeaves()
                 .stream()
-                .map(leave -> leave.getDate() + " " + leave.getRange() + " " + leave.getType())
+                .map(leave -> {
+                    String note = leave.getNote();
+                    String notePart = (note == null || note.isBlank()) ? "" : " | note=" + note;
+
+                    return leave.getDate()
+                            + " " + leave.getRange()
+                            + " " + leave.getType()
+                            + notePart;
+                })
                 .sorted()
                 .reduce((a, b) -> a + " | " + b)
                 .orElse("none");
     }
 
     private String formatLeaveRequest(LeaveRequest request) {
+        String note = request.getLeave().getNote();
+        String notePart = (note == null || note.isBlank()) ? "" : " | note=" + note;
+
         return "Request #" + request.getId()
                 + " | employee=" + request.getEmployee().getName()
                 + " | date=" + request.getLeave().getDate()
                 + " | range=" + request.getLeave().getRange()
                 + " | type=" + request.getLeave().getType()
-                + " | status=" + request.getStatus();
+                + " | status=" + request.getStatus()
+                + notePart;
     }
 }

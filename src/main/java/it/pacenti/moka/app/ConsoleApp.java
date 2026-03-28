@@ -3,8 +3,10 @@ package it.pacenti.moka.app;
 import it.pacenti.moka.employee.EmployeeFactory;
 import it.pacenti.moka.persistence.json.JsonEmployeeRepository;
 import it.pacenti.moka.persistence.json.JsonLeaveRequestRepository;
+import it.pacenti.moka.persistence.json.JsonTemplateRepository;
 import it.pacenti.moka.repository.EmployeeRepository;
 import it.pacenti.moka.repository.LeaveRequestRepository;
+import it.pacenti.moka.repository.TemplateRepository;
 import it.pacenti.moka.scheduling.ShiftScheduler;
 import it.pacenti.moka.service.ManagerService;
 
@@ -41,6 +43,9 @@ public class ConsoleApp {
                         employeeRepository
                 );
 
+        TemplateRepository templateRepository =
+                new JsonTemplateRepository(dataDirectory.resolve("templates.json"));
+
         EmployeeFactory employeeFactory = new EmployeeFactory();
         ShiftScheduler shiftScheduler = new ShiftScheduler();
 
@@ -52,7 +57,8 @@ public class ConsoleApp {
         );
 
         ConsoleIO io = new ConsoleIO();
-        ManagerConsoleController controller = new ManagerConsoleController(io, managerService);
+        ManagerConsoleController controller =
+                new ManagerConsoleController(io, managerService, templateRepository);
 
         controller.run();
     }

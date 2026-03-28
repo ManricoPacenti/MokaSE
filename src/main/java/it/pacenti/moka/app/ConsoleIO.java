@@ -89,6 +89,6 @@ public class ConsoleIO {
     }
 
     public void waitForEnter() {
-        readLine("Press ENTER to continue...");
+        readLine("Press ENTER to continue");
     }
 }
