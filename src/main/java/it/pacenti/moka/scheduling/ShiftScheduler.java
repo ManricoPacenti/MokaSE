@@ -22,14 +22,20 @@ import java.util.logging.Logger;
  * 1. assign critical slots first with this order:
  *    RESP -> OPENING -> BAR -> KITCHEN -> WAITER -> RUNNER
  * 2. for each slot, select the best legal employee by:
- *    - proficiency on required skill
- *    - scarcity of weekly availability
+ *    - role fit / proficiency
  *    - remaining agreed hours to complete
+ *    - contractual pressure derived from employee priority
  *    - employee priority
- *    - RESP cross-role bonus on other skills
+ *    - scarcity of weekly availability
  *    - slight same-day continuity
  *
- * This is intentionally heuristic, readable and explainable.
+ * Design note:
+ * - critical roles keep a stronger role-fit weight
+ * - non-critical roles increase the importance of hour balancing
+ * - RESP employees may still be used on other roles if they have that skill,
+ *   but they are slightly protected from being consumed too early on non-critical slots
+ * - HIGH priority employees represent staff whose agreed hours should be completed
+ *   as much as possible; LOW priority employees are more flexible / on-call
  */
 public class ShiftScheduler {
 
@@ -165,7 +171,9 @@ public class ShiftScheduler {
                         Comparator.comparingInt((Employee employee) ->
                                         calculateCandidateScore(employee, slot, schedule))
                                 .thenComparingInt(employee ->
-                                        getProficiencyScore(employee, slot.getRequiredSkill()))
+                                        getRoleFitScore(employee, slot))
+                                .thenComparingInt(employee ->
+                                        getHoursBalanceScore(employee, schedule, slot))
                                 .thenComparingInt(employee ->
                                         getEmployeePriorityScore(employee.getPriority()))
                                 .thenComparingDouble(schedule::getRemainingHours)
@@ -197,81 +205,115 @@ public class ShiftScheduler {
     }
 
     private int calculateCandidateScore(Employee employee, ShiftSlot slot, WeeklySchedule schedule) {
-        int proficiencyScore = getProficiencyScore(employee, slot.getRequiredSkill()) * 100;
-        int weeklyAvailabilityScarcityScore = getWeeklyAvailabilityScarcityScore(employee) * 12;
-        int remainingHoursScore = getRemainingHoursScore(employee, schedule) * 18;
-        int priorityScore = getEmployeePriorityScore(employee.getPriority()) * 15;
-        int respCrossRoleBonus = getRespCrossRoleBonus(employee, slot);
+        int roleFitScore = getRoleFitScore(employee, slot);
+        int hoursBalanceScore = getHoursBalanceScore(employee, schedule, slot);
+        int priorityScore = getWeightedPriorityScore(employee, slot);
+        int scarcityScore = getWeightedScarcityScore(employee, slot);
         int sameDayContinuityBonus = getSameDayContinuityBonus(employee, slot, schedule);
+        int criticalSkillProtectionPenalty = getCriticalSkillProtectionPenalty(employee, slot);
 
-        return proficiencyScore
-                + weeklyAvailabilityScarcityScore
-                + remainingHoursScore
+        return roleFitScore
+                + hoursBalanceScore
                 + priorityScore
-                + respCrossRoleBonus
-                + sameDayContinuityBonus;
+                + scarcityScore
+                + sameDayContinuityBonus
+                + criticalSkillProtectionPenalty;
     }
 
     /**
-     * Rewards scarcity of weekly availability.
-     *
-     * Example:
-     * - available 3 days => higher score
-     * - available 7 days => lower score
+     * Stronger role-fit weight on critical slots, lighter on non-critical slots.
+     * This prevents proficiency from crushing the hour balancing everywhere.
      */
-    private int getWeeklyAvailabilityScarcityScore(Employee employee) {
-        int fullDaysOff = employee.getAvailability().getFullDaysOff().size();
-        int availableDays = 7 - fullDaysOff;
+    private int getRoleFitScore(Employee employee, ShiftSlot slot) {
+        int proficiency = getProficiencyScore(employee, slot.getRequiredSkill());
 
-        if (availableDays <= 0) {
+        if (proficiency == 0) {
             return 0;
         }
 
-        return 8 - availableDays;
+        if (isCriticalSkill(slot.getRequiredSkill())) {
+            return proficiency * 140; // 140 / 280 / 420
+        }
+
+        return proficiency * 85; // 85 / 170 / 255
     }
 
     /**
-     * More missing agreed hours => stronger incentive to assign.
+     * Main balancing force.
+     * Remaining hours are weighted by:
+     * - relative missing hours
+     * - absolute missing hours
+     * - contractual pressure derived from Priority
+     *
+     * HIGH = staff whose agreed hours should be completed as much as possible
+     * MEDIUM = moderate pressure
+     * LOW = flexible / on-call
      */
-    private int getRemainingHoursScore(Employee employee, WeeklySchedule schedule) {
-        double remainingHours = schedule.getRemainingHours(employee);
+    private int getHoursBalanceScore(Employee employee, WeeklySchedule schedule, ShiftSlot slot) {
+        double remainingHours = Math.max(0.0, schedule.getRemainingHours(employee));
+        double agreedHours = Math.max(1.0, employee.getAgreedHours());
 
+        int relativeMissingScore = (int) Math.round((remainingHours / agreedHours) * 100.0);
+        int absoluteMissingScore = (int) Math.min(60, Math.round(remainingHours * 2.0));
+
+        int baseScore;
+        if (isCriticalSkill(slot.getRequiredSkill())) {
+            baseScore = relativeMissingScore + (absoluteMissingScore / 2);
+        } else {
+            baseScore = relativeMissingScore + absoluteMissingScore;
+        }
+
+        return baseScore + getContractPressureBonus(employee, remainingHours);
+    }
+
+    /**
+     * Extra balancing pressure for employees whose contract hours should be fulfilled.
+     */
+    private int getContractPressureBonus(Employee employee, double remainingHours) {
         if (remainingHours <= 0) {
             return 0;
         }
 
-        return Math.min(12, (int) Math.ceil(remainingHours));
+        int priorityMultiplier = switch (employee.getPriority()) {
+            case HIGH -> 12;
+            case MEDIUM -> 6;
+            case LOW -> 0;
+        };
+
+        return (int) Math.round(Math.min(120, remainingHours * priorityMultiplier));
     }
 
     /**
-     * Gives RESP employees a transversal advantage on non-RESP roles.
+     * Scarcity remains useful, but lighter than before.
+     * It should help in close cases, not dominate the whole decision.
      */
-    private int getRespCrossRoleBonus(Employee employee, ShiftSlot slot) {
-        if (slot.getRequiredSkill() == Skill.RESP) {
-            return 0;
+    private int getWeightedScarcityScore(Employee employee, ShiftSlot slot) {
+        int scarcity = getWeeklyAvailabilityScarcityScore(employee);
+
+        if (isCriticalSkill(slot.getRequiredSkill())) {
+            return scarcity * 6;
         }
 
-        if (!employee.hasSkill(Skill.RESP)) {
-            return 0;
+        return scarcity * 3;
+    }
+
+    /**
+     * Priority still matters as a general preference,
+     * but the real contractual weight is handled in getHoursBalanceScore().
+     */
+    private int getWeightedPriorityScore(Employee employee, ShiftSlot slot) {
+        int priority = getEmployeePriorityScore(employee.getPriority());
+
+        if (isCriticalSkill(slot.getRequiredSkill())) {
+            return priority * 6;
         }
 
-        int respProficiency = getProficiencyScore(employee, Skill.RESP);
-        if (respProficiency == 0) {
-            return 0;
-        }
-
-        return switch (slot.getRequiredSkill()) {
-            case OPENING -> respProficiency * 24;
-            case BAR -> respProficiency * 20;
-            case KITCHEN -> respProficiency * 12;
-            case WAITER -> respProficiency * 16;
-            case RUNNER -> respProficiency * 10;
-            default -> 0;
-        };
+        return priority * 4;
     }
 
     /**
      * Slight preference for continuing work on the same day.
+     * Kept intentionally small.
      */
     private int getSameDayContinuityBonus(Employee employee, ShiftSlot slot, WeeklySchedule schedule) {
         long assignedMinutes = schedule.getAssignedMinutesFor(employee, slot.getDay());
@@ -280,7 +322,60 @@ public class ShiftScheduler {
             return 0;
         }
 
-        return (int) Math.min(20, assignedMinutes / 60);
+        if (isCriticalSkill(slot.getRequiredSkill())) {
+            return (int) Math.min(10, assignedMinutes / 120);
+        }
+
+        return (int) Math.min(12, assignedMinutes / 60);
+    }
+
+    /**
+     * Protect RESP employees from being consumed too aggressively
+     * on non-critical roles.
+     *
+     * Important:
+     * - no penalty on RESP itself
+     * - no penalty on critical roles (RESP / OPENING / BAR)
+     * - only a moderate penalty on non-critical roles
+     */
+    private int getCriticalSkillProtectionPenalty(Employee employee, ShiftSlot slot) {
+        Skill requiredSkill = slot.getRequiredSkill();
+
+        if (requiredSkill == Skill.RESP) {
+            return 0;
+        }
+
+        if (isCriticalSkill(requiredSkill)) {
+            return 0;
+        }
+
+        if (!employee.hasSkill(Skill.RESP)) {
+            return 0;
+        }
+
+        return -60;
+    }
+
+    /**
+     * Rewards scarcity of weekly availability in a soft way.
+     *
+     * Example:
+     * - available 7 days -> 0
+     * - available 6 days -> 1
+     * - available 5 days -> 2
+     * - available 3 days -> 4
+     */
+    private int getWeeklyAvailabilityScarcityScore(Employee employee) {
+        int fullDaysOff = employee.getAvailability().getFullDaysOff().size();
+        int availableDays = Math.max(0, 7 - fullDaysOff);
+
+        return Math.max(0, 7 - availableDays);
+    }
+
+    private boolean isCriticalSkill(Skill skill) {
+        return skill == Skill.RESP
+                || skill == Skill.OPENING
+                || skill == Skill.BAR;
     }
 
     private int getBusinessSkillPriority(Skill skill) {
@@ -368,18 +463,19 @@ public class ShiftScheduler {
         System.out.println("Candidates:");
 
         for (Employee employee : ordered) {
-            int proficiencyScore = getProficiencyScore(employee, slot.getRequiredSkill()) * 100;
-            int weeklyAvailabilityScarcityScore = getWeeklyAvailabilityScarcityScore(employee) * 12;
-            int remainingHoursScore = getRemainingHoursScore(employee, schedule) * 18;
-            int priorityScore = getEmployeePriorityScore(employee.getPriority()) * 15;
-            int respCrossRoleBonus = getRespCrossRoleBonus(employee, slot);
+            int roleFitScore = getRoleFitScore(employee, slot);
+            int hoursBalanceScore = getHoursBalanceScore(employee, schedule, slot);
+            int priorityScore = getWeightedPriorityScore(employee, slot);
+            int scarcityScore = getWeightedScarcityScore(employee, slot);
             int sameDayContinuityBonus = getSameDayContinuityBonus(employee, slot, schedule);
-            int total = proficiencyScore
-                    + weeklyAvailabilityScarcityScore
-                    + remainingHoursScore
+            int criticalSkillProtectionPenalty = getCriticalSkillProtectionPenalty(employee, slot);
+
+            int total = roleFitScore
+                    + hoursBalanceScore
                     + priorityScore
-                    + respCrossRoleBonus
-                    + sameDayContinuityBonus;
+                    + scarcityScore
+                    + sameDayContinuityBonus
+                    + criticalSkillProtectionPenalty;
 
             double assignedHours = schedule.getAssignedHours(employee);
             double remainingHours = schedule.getRemainingHours(employee);
@@ -387,15 +483,15 @@ public class ShiftScheduler {
             int availableDays = 7 - fullDaysOff;
 
             System.out.printf(
-                    "- %-15s total=%4d | prof=%3d | scarce=%3d | rem=%3d | pri=%2d | resp=%3d | cont=%2d | assigned=%4.1f | missing=%4.1f | availDays=%d%n",
+                    "- %-15s total=%4d | role=%3d | hrs=%3d | pri=%2d | scarce=%2d | cont=%2d | protect=%4d | assigned=%4.1f | missing=%4.1f | availDays=%d%n",
                     employee.getName(),
                     total,
-                    proficiencyScore,
-                    weeklyAvailabilityScarcityScore,
-                    remainingHoursScore,
+                    roleFitScore,
+                    hoursBalanceScore,
                     priorityScore,
-                    respCrossRoleBonus,
+                    scarcityScore,
                     sameDayContinuityBonus,
+                    criticalSkillProtectionPenalty,
                     assignedHours,
                     remainingHours,
                     availableDays
