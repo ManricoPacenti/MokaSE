@@ -19,13 +19,16 @@ import java.util.logging.Logger;
  * a weekly schedule template and a list of employees.
  *
  * Scheduling strategy:
- * 1. assign first the hardest slots to cover
- * 2. prefer candidates with stronger proficiency on the required skill
- * 3. protect scarce / critical resources for future slots
- * 4. encourage continuity on the same day
+ * 1. assign critical slots first with this order:
+ *    RESP -> OPENING -> BAR -> KITCHEN -> WAITER -> RUNNER
+ * 2. for each slot, select the best legal employee by:
+ *    - proficiency on required skill
+ *    - weekly availability breadth
+ *    - remaining agreed hours to complete
+ *    - employee priority
+ *    - RESP cross-role bonus on other skills
  *
- * This is intentionally heuristic and readable:
- * no solver, no backtracking, no advanced optimization algorithm.
+ * This is intentionally heuristic, readable and explainable.
  */
 public class ShiftScheduler {
 
@@ -50,7 +53,7 @@ public class ShiftScheduler {
 
         while (!remainingSlots.isEmpty()) {
             ShiftSlot nextSlot = selectNextSlot(remainingSlots, schedule, employees);
-            assignBestEmployee(nextSlot, schedule, employees, remainingSlots);
+            assignBestEmployee(nextSlot, schedule, employees);
             remainingSlots.remove(nextSlot);
         }
 
@@ -59,10 +62,7 @@ public class ShiftScheduler {
     }
 
     /**
-     * Keeps a public deterministic sorting method available.
-     * Useful for debugging, previews or tests.
-     *
-     * The real schedule generation uses dynamic slot selection instead.
+     * Public deterministic sorting method useful for previews/debug/tests.
      */
     public List<ShiftSlot> sortSlots(List<ShiftSlot> slots) {
         Objects.requireNonNull(slots, "Slots cannot be null");
@@ -72,6 +72,7 @@ public class ShiftScheduler {
         ordered.sort(
                 Comparator.comparingInt((ShiftSlot slot) -> getBusinessSkillPriority(slot.getRequiredSkill()))
                         .thenComparingInt(slot -> getDayPriority(slot.getDay()))
+                        .thenComparingInt(slot -> getEligibleCountForPreview(slot))
                         .thenComparingLong(slot -> -slot.durationMinutes())
                         .thenComparing(slot -> slot.getRange().getStart())
         );
@@ -80,12 +81,12 @@ public class ShiftScheduler {
     }
 
     /**
-     * Selects the next slot to assign according to scheduling difficulty.
+     * Selects the next slot to assign.
      *
-     * Priority:
-     * 1. fewer eligible employees first
-     * 2. more critical business skill first
-     * 3. more critical day first
+     * Primary rule:
+     * 1. business-critical skill order first
+     * 2. more critical day first
+     * 3. fewer eligible employees first
      * 4. longer slot first
      * 5. earlier start first
      */
@@ -95,9 +96,10 @@ public class ShiftScheduler {
         return remainingSlots.stream()
                 .min(
                         Comparator.comparingInt((ShiftSlot slot) ->
-                                        findEligibleEmployees(slot, schedule, employees).size())
-                                .thenComparingInt(slot -> getBusinessSkillPriority(slot.getRequiredSkill()))
+                                        getBusinessSkillPriority(slot.getRequiredSkill()))
                                 .thenComparingInt(slot -> getDayPriority(slot.getDay()))
+                                .thenComparingInt(slot ->
+                                        findEligibleEmployees(slot, schedule, employees).size())
                                 .thenComparingLong(slot -> -slot.durationMinutes())
                                 .thenComparing(slot -> slot.getRange().getStart())
                 )
@@ -113,21 +115,6 @@ public class ShiftScheduler {
         Objects.requireNonNull(schedule, "WeeklySchedule cannot be null");
         Objects.requireNonNull(employees, "Employees cannot be null");
 
-        assignBestEmployee(slot, schedule, employees, schedule.getSlots());
-    }
-
-    /**
-     * Internal assignment method aware of remaining slots.
-     */
-    private void assignBestEmployee(ShiftSlot slot,
-                                    WeeklySchedule schedule,
-                                    List<Employee> employees,
-                                    List<ShiftSlot> remainingSlots) {
-        Objects.requireNonNull(slot, "ShiftSlot cannot be null");
-        Objects.requireNonNull(schedule, "WeeklySchedule cannot be null");
-        Objects.requireNonNull(employees, "Employees cannot be null");
-        Objects.requireNonNull(remainingSlots, "Remaining slots cannot be null");
-
         List<Employee> candidates = findEligibleEmployees(slot, schedule, employees);
 
         if (candidates.isEmpty()) {
@@ -135,7 +122,7 @@ public class ShiftScheduler {
             return;
         }
 
-        Optional<Employee> selected = selectBestEmployee(slot, candidates, schedule, remainingSlots, employees);
+        Optional<Employee> selected = selectBestEmployee(slot, candidates, schedule);
 
         if (selected.isPresent()) {
             Employee employee = selected.get();
@@ -183,8 +170,8 @@ public class ShiftScheduler {
     }
 
     /**
-     * Backward-compatible public selector.
-     * Uses the simpler strategy if called externally.
+     * Public selector used also externally.
+     * Uses the main scoring strategy.
      */
     public Optional<Employee> selectBestEmployee(ShiftSlot slot, List<Employee> candidates, WeeklySchedule schedule) {
         Objects.requireNonNull(slot, "ShiftSlot cannot be null");
@@ -194,40 +181,12 @@ public class ShiftScheduler {
         return candidates.stream()
                 .max(
                         Comparator.comparingInt((Employee employee) ->
-                                        getProficiencyScore(employee, slot.getRequiredSkill()))
-                                .thenComparingInt(employee -> getEmployeePriorityScore(employee.getPriority()))
-                                .thenComparingInt(employee -> getSameDayContinuityScore(employee, slot, schedule))
-                                .thenComparingDouble(employee -> schedule.getRemainingHours(employee))                );
-    }
-
-    /**
-     * Selects the best employee among the eligible candidates using
-     * a richer heuristic.
-     *
-     * Priority order:
-     * 1. skill proficiency on the requested skill
-     * 2. employee priority
-     * 3. same-day continuity
-     * 4. preserve valuable resources for future critical/scarce slots
-     * 5. remaining weekly hours
-     */
-    private Optional<Employee> selectBestEmployee(ShiftSlot slot,
-                                                  List<Employee> candidates,
-                                                  WeeklySchedule schedule,
-                                                  List<ShiftSlot> remainingSlots,
-                                                  List<Employee> allEmployees) {
-        return candidates.stream()
-                .max(
-                        Comparator.comparingInt((Employee employee) ->
+                                        calculateCandidateScore(employee, slot, schedule))
+                                .thenComparingInt(employee ->
                                         getProficiencyScore(employee, slot.getRequiredSkill()))
                                 .thenComparingInt(employee ->
                                         getEmployeePriorityScore(employee.getPriority()))
-                                .thenComparingLong(employee ->
-                                        schedule.getAssignedMinutesFor(employee, slot.getDay()))
-                                .thenComparingInt(employee ->
-                                        -getFuturePreservationPenalty(employee, slot, remainingSlots, schedule, allEmployees))
-                                .thenComparingDouble(employee ->
-                                        schedule.getRemainingHours(employee))
+                                .thenComparingDouble(schedule::getRemainingHours)
                 );
     }
 
@@ -261,113 +220,127 @@ public class ShiftScheduler {
     }
 
     /**
-     * Measures continuity as already assigned minutes on the same day.
-     * This is a simple and readable proxy:
-     * it helps reduce unnecessary day fragmentation without introducing
-     * complex adjacency logic.
-     */
-    private int getSameDayContinuityScore(Employee employee, ShiftSlot slot, WeeklySchedule schedule) {
-        return (int) schedule.getAssignedMinutesFor(employee, slot.getDay());
-    }
-
-    /**
-     * Penalizes assigning a candidate to the current slot if that employee
-     * is also likely needed for future slots that are:
-     * - more critical from a business perspective
-     * - harder to cover (fewer candidates)
+     * Main readable scoring function for candidate selection.
      *
-     * Higher penalty = employee should be preserved for future use.
+     * Weights chosen to reflect the requested business logic:
+     * - required skill proficiency is the strongest factor
+     * - weekly availability breadth matters
+     * - remaining agreed hours matters
+     * - employee priority matters
+     * - RESP gets a bonus on non-RESP roles
+     * - slight continuity bonus on the same day
      */
-    private int getFuturePreservationPenalty(Employee employee,
-                                             ShiftSlot currentSlot,
-                                             List<ShiftSlot> remainingSlots,
-                                             WeeklySchedule schedule,
-                                             List<Employee> allEmployees) {
-        int penalty = 0;
+    private int calculateCandidateScore(Employee employee, ShiftSlot slot, WeeklySchedule schedule) {
+        int proficiencyScore = getProficiencyScore(employee, slot.getRequiredSkill()) * 100;
+        int weeklyAvailabilityScore = getWeeklyAvailabilityScarcityScore(employee) * 12;        int remainingHoursScore = getRemainingHoursScore(employee, schedule) * 10;
+        int priorityScore = getEmployeePriorityScore(employee.getPriority()) * 15;
+        int respCrossRoleBonus = getRespCrossRoleBonus(employee, slot);
+        int sameDayContinuityBonus = getSameDayContinuityBonus(employee, slot, schedule);
 
-        for (ShiftSlot futureSlot : remainingSlots) {
-            if (futureSlot == currentSlot) {
-                continue;
-            }
-
-            if (!isMoreCriticalThanCurrent(futureSlot, currentSlot)) {
-                continue;
-            }
-
-            if (!canStillCoverFutureSlotAfterCurrentAssignment(employee, currentSlot, futureSlot, schedule)) {
-                continue;
-            }
-
-            int eligibleCount = findEligibleEmployees(futureSlot, schedule, allEmployees).size();
-            int scarcityWeight = getScarcityWeight(eligibleCount);
-            int proficiencyWeight = Math.max(1, getProficiencyScore(employee, futureSlot.getRequiredSkill()));
-
-            penalty += scarcityWeight * proficiencyWeight;
-        }
-
-        return penalty;
-    }
-
-    private boolean isMoreCriticalThanCurrent(ShiftSlot futureSlot, ShiftSlot currentSlot) {
-        return getBusinessSkillPriority(futureSlot.getRequiredSkill())
-                < getBusinessSkillPriority(currentSlot.getRequiredSkill());
+        return proficiencyScore
+                + weeklyAvailabilityScore
+                + remainingHoursScore
+                + priorityScore
+                + respCrossRoleBonus
+                + sameDayContinuityBonus;
     }
 
     /**
-     * Checks whether an employee would still be able to cover a future slot
-     * after being assigned to the current one.
+     * Rewards scarcity of weekly availability.
+     *
+     * Rationale:
+     * an employee who can work on fewer days should be preferred
+     * on the days when they are actually available, because employees
+     * with broader availability can still be used elsewhere in the week.
      */
-    private boolean canStillCoverFutureSlotAfterCurrentAssignment(Employee employee,
-                                                                  ShiftSlot currentSlot,
-                                                                  ShiftSlot futureSlot,
-                                                                  WeeklySchedule schedule) {
-        LocalDate futureDate = schedule.getDateFor(futureSlot);
+    private int getWeeklyAvailabilityScarcityScore(Employee employee) {
+        int fullDaysOff = employee.getAvailability().getFullDaysOff().size();
+        int availableDays = 7 - fullDaysOff;
 
-        if (!employee.isAssignableTo(futureSlot, futureDate)) {
-            return false;
+        if (availableDays <= 0) {
+            return 0;
         }
 
-        if (schedule.hasOverlappingAssignment(employee, futureSlot)) {
-            return false;
-        }
-
-        if (currentSlot.overlaps(futureSlot)) {
-            return false;
-        }
-
-        double remainingHoursAfterCurrent =
-                schedule.getRemainingHours(employee) - (currentSlot.durationMinutes() / 60.0);
-
-        if (remainingHoursAfterCurrent < futureSlot.durationMinutes() / 60.0) {
-            return false;
-        }
-
-        long assignedFutureDay = schedule.getAssignedMinutesFor(employee, futureSlot.getDay());
-        if (currentSlot.getDay().equals(futureSlot.getDay())) {
-            assignedFutureDay += currentSlot.durationMinutes();
-        }
-
-        return assignedFutureDay + futureSlot.durationMinutes() <= MAX_DAILY_MINUTES;
+        return 8 - availableDays;
     }
 
-    private int getScarcityWeight(int eligibleCount) {
-        return switch (eligibleCount) {
-            case 0, 1 -> 4;
-            case 2 -> 3;
-            case 3 -> 2;
-            default -> 1;
+    /**
+     * Score based on how many agreed weekly hours are still missing.
+     *
+     * More remaining hours = higher incentive to assign the employee.
+     * Capped to keep the heuristic stable and readable.
+     */
+    private int getRemainingHoursScore(Employee employee, WeeklySchedule schedule) {
+        double remainingHours = schedule.getRemainingHours(employee);
+
+        if (remainingHours <= 0) {
+            return 0;
+        }
+
+        return Math.min(10, (int) Math.ceil(remainingHours));
+    }
+
+    /**
+     * Gives RESP employees a transversal advantage on non-RESP roles.
+     *
+     * Rationale:
+     * the responsible role is considered strategically valuable,
+     * so employees capable of RESP are also rewarded when covering
+     * other roles.
+     *
+     * The bonus is stronger on OPENING and BAR, lighter elsewhere.
+     */
+    private int getRespCrossRoleBonus(Employee employee, ShiftSlot slot) {
+        if (slot.getRequiredSkill() == Skill.RESP) {
+            return 0;
+        }
+
+        if (!employee.hasSkill(Skill.RESP)) {
+            return 0;
+        }
+
+        int respProficiency = getProficiencyScore(employee, Skill.RESP);
+        if (respProficiency == 0) {
+            return 0;
+        }
+
+        return switch (slot.getRequiredSkill()) {
+            case OPENING -> respProficiency * 30;
+            case BAR -> respProficiency * 24;
+            case KITCHEN -> respProficiency * 18;
+            case WAITER -> respProficiency * 18;
+            case RUNNER -> respProficiency * 15;
+            default -> 0;
         };
+    }
+
+    /**
+     * Small continuity bonus:
+     * if the employee is already working that day,
+     * we slightly prefer continuity.
+     */
+    private int getSameDayContinuityBonus(Employee employee, ShiftSlot slot, WeeklySchedule schedule) {
+        long assignedMinutes = schedule.getAssignedMinutesFor(employee, slot.getDay());
+
+        if (assignedMinutes <= 0) {
+            return 0;
+        }
+
+        return (int) Math.min(20, assignedMinutes / 60);
     }
 
     /**
      * Business priority of skills.
      * Lower number = more important = assigned earlier.
+     *
+     * Requested sequence:
+     * RESP -> OPENING -> BAR -> others
      */
     private int getBusinessSkillPriority(Skill skill) {
         return switch (skill) {
             case RESP -> 1;
-            case BAR -> 2;
-            case OPENING -> 3;
+            case OPENING -> 2;
+            case BAR -> 3;
             case KITCHEN -> 4;
             case WAITER -> 5;
             case RUNNER -> 6;
@@ -410,5 +383,13 @@ public class ShiftScheduler {
             case MEDIUM -> 2;
             case HIGH -> 3;
         };
+    }
+
+    /**
+     * Preview helper used only by sortSlots.
+     * There is no schedule context there, so we keep it neutral.
+     */
+    private int getEligibleCountForPreview(ShiftSlot slot) {
+        return 0;
     }
 }

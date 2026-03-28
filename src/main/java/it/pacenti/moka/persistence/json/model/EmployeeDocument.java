@@ -4,7 +4,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Root JSON document for employee persistence
+ * Root JSON document for employee persistence.
  */
 public class EmployeeDocument {
 
@@ -12,7 +12,7 @@ public class EmployeeDocument {
     private List<EmployeeData> employees;
 
     public EmployeeDocument() {
-        this.schemaVersion = 1;
+        this.schemaVersion = 2;
         this.employees = new ArrayList<>();
     }
 

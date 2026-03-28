@@ -25,7 +25,6 @@ import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.ArrayList;
-import java.util.EnumMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -153,6 +152,7 @@ public class JsonEmployeeRepository implements EmployeeRepository {
 
         data.setSkills(mapSkills(employee));
         data.setWeeklyTimeOff(mapWeeklyTimeOff(employee.getAvailability()));
+        data.setFullDaysOff(mapFullDaysOff(employee.getAvailability()));
         data.setApprovedLeaves(mapApprovedLeaves(employee));
 
         return data;
@@ -170,6 +170,7 @@ public class JsonEmployeeRepository implements EmployeeRepository {
 
         restoreSkills(employee, data.getSkills());
         restoreWeeklyTimeOff(employee, data.getWeeklyTimeOff());
+        restoreFullDaysOff(employee, data.getFullDaysOff());
         restoreApprovedLeaves(employee, data.getApprovedLeaves());
 
         return employee;
@@ -199,6 +200,16 @@ public class JsonEmployeeRepository implements EmployeeRepository {
             }
 
             result.put(entry.getKey().name(), ranges);
+        }
+
+        return result;
+    }
+
+    private List<String> mapFullDaysOff(WeeklyAvailability availability) {
+        List<String> result = new ArrayList<>();
+
+        for (DayOfWeek day : availability.getFullDaysOff()) {
+            result.add(day.name());
         }
 
         return result;
@@ -260,6 +271,21 @@ public class JsonEmployeeRepository implements EmployeeRepository {
         }
     }
 
+    private void restoreFullDaysOff(Employee employee, List<String> fullDaysOffData) {
+        if (fullDaysOffData == null) {
+            return;
+        }
+
+        for (String dayValue : fullDaysOffData) {
+            if (dayValue == null || dayValue.isBlank()) {
+                continue;
+            }
+
+            DayOfWeek day = DayOfWeek.valueOf(dayValue);
+            employee.getAvailability().addFullDayOff(day);
+        }
+    }
+
     private void restoreApprovedLeaves(Employee employee, List<LeaveData> leaveDataList) {
         if (leaveDataList == null) {
             return;
@@ -282,7 +308,6 @@ public class JsonEmployeeRepository implements EmployeeRepository {
                     range,
                     it.pacenti.moka.availability.LeaveType.valueOf(leaveData.getType()),
                     leaveData.getNote()
-
             );
 
             employee.addLeave(leave);
