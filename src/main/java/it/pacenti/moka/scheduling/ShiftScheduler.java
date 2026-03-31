@@ -7,562 +7,330 @@ import it.pacenti.moka.employee.Skill;
 
 import java.time.DayOfWeek;
 import java.time.LocalDate;
-import java.time.LocalTime;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Comparator;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Objects;
-import java.util.Optional;
-import java.util.Set;
-import java.util.logging.Logger;
+import java.util.*;
+import java.util.stream.Collectors;
 
 /**
- * Generates a weekly schedule from a weekly template and a list of employees.
+ * Shift scheduler with phased assignment and protected rebalance.
  *
  * Strategy:
- * 1. assign slots greedily, prioritizing critical business roles
- * 2. apply opening/bar business rule with containment
- * 3. run a small, controlled rebalance focused on HIGH priority employees
+ * 1) Assign RESP first
+ * 2) Assign remaining slots trying to favor critical HIGH employees
+ * 3) First protective rebalance for critical HIGH employees
+ * 4) Assign remaining standard slots
+ * 5) Final rebalance for HIGH employees still under agreed hours
  *
- * Business meaning of priority:
- * - HIGH   = contractual staff whose agreed hours should be respected as much as possible
- * - MEDIUM = intermediate pressure
- * - LOW    = more flexible / on-call staff
- *
- * Design goals:
- * - readable and explainable heuristics
- * - conservative rebalance
- * - avoid chaotic endless swaps
+ * Goal:
+ * - preserve strategic employees (especially RESP HIGH)
+ * - complete hours for critical employees before filling everything else
+ * - avoid late rebalances that damage important assignments
  */
 public class ShiftScheduler {
 
-    private static final Logger LOGGER = Logger.getLogger(ShiftScheduler.class.getName());
+    public static boolean DEBUG = true;
 
-    private static final int MAX_DAILY_MINUTES = 8 * 60;
-    private static final int MAX_REBALANCE_PASSES = 2;
+    private static final long MAX_DAILY_MINUTES = 8 * 60;
+
+    private static final int SCORE_ROLE_HIGH = 420;
+    private static final int SCORE_ROLE_MID = 280;
+    private static final int SCORE_ROLE_LOW = 140;
+    private static final int SCORE_ROLE_FALLBACK = 85;
+
+    private static final int SCORE_PRIORITY_HIGH = 36;
+    private static final int SCORE_PRIORITY_MEDIUM = 24;
+    private static final int SCORE_PRIORITY_LOW = 12;
+
+    private static final int BONUS_RESP_CRITICAL = 40;
+    private static final int BONUS_CRITICAL_HIGH_PHASE = 30;
+    private static final int BONUS_OPPORTUNITY_RESP = 24;
+    private static final int BONUS_CONTINUITY = 6;
+
+    private static final int PENALTY_PROTECT_CRITICAL = -20;
+    private static final int PENALTY_RESP_USED_OUTSIDE_ROLE = -10;
 
     /**
-     * Set to false if you want silence.
+     * Entry point.
      */
-    private static final boolean DEBUG = true;
-
     public WeeklySchedule generateSchedule(WeeklyScheduleTemplate template, List<Employee> employees) {
         Objects.requireNonNull(template, "Template cannot be null");
-        Objects.requireNonNull(employees, "Employee list cannot be null");
+        Objects.requireNonNull(employees, "Employees cannot be null");
 
         WeeklySchedule schedule = new WeeklySchedule(template.getWeekStart());
         schedule.addSlots(template.getSlots());
 
-        List<ShiftSlot> remainingSlots = new ArrayList<>(template.getSlots());
+        debugHeader("Generate Weekly Schedule");
 
-        while (!remainingSlots.isEmpty()) {
-            ShiftSlot nextSlot = selectNextSlot(remainingSlots, schedule, employees);
-            assignBestEmployee(nextSlot, schedule, employees);
-            remainingSlots.remove(nextSlot);
+        assignRespPhase(schedule, employees);
+        assignCriticalHighPhase(schedule, employees);
+        rebalanceCriticalHighPhase(schedule, employees);
+        assignStandardPhase(schedule, employees);
+        rebalanceResidualHighPhase(schedule, employees);
+
+        if (DEBUG) {
+            System.out.println("Schedule generated successfully.");
+            System.out.println();
+            printHoursSummary(schedule, employees);
         }
 
-        rebalanceHighPriorityCoverage(schedule, employees);
-
-        LOGGER.info("Schedule generation completed");
         return schedule;
     }
 
-    public List<ShiftSlot> sortSlots(List<ShiftSlot> slots) {
-        Objects.requireNonNull(slots, "Slots cannot be null");
+    // ============================================================
+    // PHASE 1 - RESP
+    // ============================================================
 
-        List<ShiftSlot> ordered = new ArrayList<>(slots);
+    private void assignRespPhase(WeeklySchedule schedule, List<Employee> employees) {
+        List<ShiftSlot> respSlots = schedule.getUnassignedSlots().stream()
+                .filter(slot -> slot.getRequiredSkill() == Skill.RESP)
+                .sorted(respSlotComparator())
+                .toList();
 
-        ordered.sort(
-                Comparator.comparingInt((ShiftSlot slot) -> getBusinessSkillPriority(slot.getRequiredSkill()))
-                        .thenComparingInt(slot -> getDayPriority(slot.getDay()))
-                        .thenComparingLong(slot -> -slot.durationMinutes())
-                        .thenComparing(slot -> slot.getRange().getStart())
-        );
-
-        return ordered;
+        for (ShiftSlot slot : respSlots) {
+            assignBestCandidate(schedule, employees, slot, AssignmentPhase.RESP);
+        }
     }
 
-    private ShiftSlot selectNextSlot(List<ShiftSlot> remainingSlots,
-                                     WeeklySchedule schedule,
-                                     List<Employee> employees) {
-        return remainingSlots.stream()
-                .min(
-                        Comparator.comparingInt((ShiftSlot slot) ->
-                                        getBusinessSkillPriority(slot.getRequiredSkill()))
-                                .thenComparingInt(slot -> getDayPriority(slot.getDay()))
-                                .thenComparingInt(slot ->
-                                        findEligibleEmployees(slot, schedule, employees).size())
-                                .thenComparingLong(slot -> -slot.durationMinutes())
-                                .thenComparing(slot -> slot.getRange().getStart())
-                )
-                .orElseThrow(() -> new IllegalStateException("No slot available for selection"));
+    // ============================================================
+    // PHASE 2 - CRITICAL HIGH
+    // ============================================================
+
+    private void assignCriticalHighPhase(WeeklySchedule schedule, List<Employee> employees) {
+        List<Employee> criticalHighEmployees = employees.stream()
+                .filter(this::isHigh)
+                .filter(this::isCriticalHighEmployee)
+                .toList();
+
+        List<ShiftSlot> slots = schedule.getUnassignedSlots().stream()
+                .sorted(generalSlotComparator())
+                .toList();
+
+        for (ShiftSlot slot : slots) {
+            assignBestCandidate(schedule, criticalHighEmployees, slot, AssignmentPhase.CRITICAL_HIGH);
+        }
     }
 
-    public void assignBestEmployee(ShiftSlot slot, WeeklySchedule schedule, List<Employee> employees) {
-        Objects.requireNonNull(slot, "ShiftSlot cannot be null");
-        Objects.requireNonNull(schedule, "WeeklySchedule cannot be null");
-        Objects.requireNonNull(employees, "Employees cannot be null");
+    // ============================================================
+    // PHASE 3 - PROTECTIVE REBALANCE
+    // ============================================================
 
-        List<Employee> candidates = findEligibleEmployees(slot, schedule, employees);
+    private void rebalanceCriticalHighPhase(WeeklySchedule schedule, List<Employee> employees) {
+        List<Employee> targets = employees.stream()
+                .filter(this::isHigh)
+                .filter(this::isCriticalHighEmployee)
+                .filter(employee -> getMissingMinutes(schedule, employee) > 0)
+                .sorted(Comparator.comparingLong((Employee e) -> getMissingMinutes(schedule, e)).reversed())
+                .toList();
 
-        debugSlotHeader(slot, schedule, candidates);
+        for (Employee target : targets) {
+            boolean improved = true;
+
+            while (improved && getMissingMinutes(schedule, target) > 0) {
+                improved = attemptTakeover(schedule, target, true);
+            }
+        }
+    }
+
+    // ============================================================
+    // PHASE 4 - STANDARD
+    // ============================================================
+
+    private void assignStandardPhase(WeeklySchedule schedule, List<Employee> employees) {
+        List<ShiftSlot> remaining = schedule.getUnassignedSlots().stream()
+                .sorted(generalSlotComparator())
+                .toList();
+
+        for (ShiftSlot slot : remaining) {
+            assignBestCandidate(schedule, employees, slot, AssignmentPhase.STANDARD);
+        }
+    }
+
+    // ============================================================
+    // PHASE 5 - FINAL HIGH REBALANCE
+    // ============================================================
+
+    private void rebalanceResidualHighPhase(WeeklySchedule schedule, List<Employee> employees) {
+        List<Employee> targets = employees.stream()
+                .filter(this::isHigh)
+                .filter(employee -> getMissingMinutes(schedule, employee) > 0)
+                .sorted(Comparator
+                        .comparing((Employee e) -> isRespHigh(e) ? 0 : 1)
+                        .thenComparing((Employee e) -> isCriticalHighEmployee(e) ? 0 : 1)
+                        .thenComparing(Comparator.comparingLong((Employee e) -> getMissingMinutes(schedule, e)).reversed()))
+                .toList();
+
+        for (Employee target : targets) {
+            boolean improved = true;
+
+            while (improved && getMissingMinutes(schedule, target) > 0) {
+                improved = attemptTakeover(schedule, target, false);
+            }
+        }
+    }
+
+    // ============================================================
+    // CORE ASSIGNMENT
+    // ============================================================
+
+    private void assignBestCandidate(WeeklySchedule schedule,
+                                     List<Employee> employees,
+                                     ShiftSlot slot,
+                                     AssignmentPhase phase) {
+        List<CandidateScore> candidates = employees.stream()
+                .filter(employee -> canAssign(schedule, employee, slot))
+                .map(employee -> scoreCandidate(schedule, employee, slot, phase))
+                .sorted(Comparator.reverseOrder())
+                .toList();
+
+        if (DEBUG) {
+            printDebugBlock(schedule, slot, candidates);
+        }
 
         if (candidates.isEmpty()) {
-            LOGGER.warning("No eligible employee found for slot: " + slot);
-            debugNoCandidates(slot);
+            if (DEBUG) {
+                System.out.println("No eligible candidates for slot "
+                        + slot.getDay() + " "
+                        + schedule.getDateFor(slot) + " "
+                        + slot.getRange() + " ["
+                        + slot.getRequiredSkill() + "]");
+                System.out.println();
+            }
             return;
         }
 
-        debugCandidateBreakdown(slot, schedule, candidates);
+        Employee selected = candidates.get(0).employee();
+        assign(schedule, slot, selected);
 
-        Optional<Employee> selected = selectBestEmployee(slot, candidates, schedule);
+        if (DEBUG) {
+            long assignedMinutes = schedule.getAssignedMinutes(selected);
+            long remainingMinutes = Math.max(0, getAgreedMinutes(selected) - assignedMinutes);
 
-        if (selected.isPresent()) {
-            Employee employee = selected.get();
-            schedule.assign(slot, employee);
-            applyOpeningRule(slot, employee, schedule);
-
-            LOGGER.info("Assigned " + employee.getName() + " to slot " + slot);
-            debugSelectedEmployee(slot, employee, schedule);
-        } else {
-            LOGGER.warning("No employee selected for slot: " + slot);
-            debugNoSelection(slot);
+            System.out.println("Selected: " + selected.getName()
+                    + " for " + slot.getDay()
+                    + " " + slot.getRange()
+                    + " [" + slot.getRequiredSkill() + "]"
+                    + " | assigned now: " + formatHours(assignedMinutes)
+                    + " | remaining: " + formatHours(remainingMinutes));
+            System.out.println();
         }
     }
 
-    public List<Employee> findEligibleEmployees(ShiftSlot slot, WeeklySchedule schedule, List<Employee> employees) {
-        Objects.requireNonNull(slot, "ShiftSlot cannot be null");
-        Objects.requireNonNull(schedule, "WeeklySchedule cannot be null");
-        Objects.requireNonNull(employees, "Employees cannot be null");
+    private CandidateScore scoreCandidate(WeeklySchedule schedule,
+                                          Employee employee,
+                                          ShiftSlot slot,
+                                          AssignmentPhase phase) {
+        Skill requiredSkill = slot.getRequiredSkill();
 
-        List<Employee> eligible = new ArrayList<>();
-        LocalDate slotDate = schedule.getDateFor(slot);
+        int roleScore = scoreRole(employee, requiredSkill, phase);
+        int hoursScore = scoreHours(schedule, employee);
+        int priorityScore = scorePriority(employee);
+        int opportunityScore = scoreOpportunity(employee, requiredSkill, phase);
+        int continuityScore = scoreContinuity(schedule, employee, slot);
+        int protectScore = scoreProtect(employee, requiredSkill, phase);
+        int lateScore = scoreLate(slot);
+        int futureScore = scoreFutureCriticalProtection(schedule, employee, slot, phase);
+        int flexScore = scoreFlex(employee, phase);
 
-        for (Employee employee : employees) {
-            if (!employee.isAssignableTo(slot, slotDate)) {
-                continue;
-            }
+        int total = roleScore
+                + hoursScore
+                + priorityScore
+                + opportunityScore
+                + continuityScore
+                + protectScore
+                + lateScore
+                + futureScore
+                + flexScore;
 
-            if (schedule.hasOverlappingAssignment(employee, slot)) {
-                continue;
-            }
-
-            if (schedule.getRemainingHours(employee) < slot.durationMinutes() / 60.0) {
-                continue;
-            }
-
-            long assignedToday = schedule.getAssignedMinutesFor(employee, slot.getDay());
-            if (assignedToday + slot.durationMinutes() > MAX_DAILY_MINUTES) {
-                continue;
-            }
-
-            eligible.add(employee);
-        }
-
-        return eligible;
+        return new CandidateScore(
+                employee,
+                total,
+                roleScore,
+                hoursScore,
+                priorityScore,
+                opportunityScore,
+                continuityScore,
+                protectScore,
+                lateScore,
+                futureScore,
+                flexScore
+        );
     }
 
-    public Optional<Employee> selectBestEmployee(ShiftSlot slot, List<Employee> candidates, WeeklySchedule schedule) {
-        Objects.requireNonNull(slot, "ShiftSlot cannot be null");
-        Objects.requireNonNull(candidates, "Candidates cannot be null");
-        Objects.requireNonNull(schedule, "WeeklySchedule cannot be null");
+    // ============================================================
+    // TAKEOVER / REBALANCE
+    // ============================================================
 
-        return candidates.stream()
-                .max(
-                        Comparator.comparingInt((Employee employee) ->
-                                        calculateCandidateScore(employee, slot, schedule))
-                                .thenComparingInt(employee -> getRoleFitScore(employee, slot))
-                                .thenComparingInt(employee -> getHoursBalanceScore(employee, schedule, slot))
-                                .thenComparingInt(employee -> getContractPriorityScore(employee, slot))
-                                .thenComparingDouble(schedule::getRemainingHours)
-                );
-    }
+    private boolean attemptTakeover(WeeklySchedule schedule,
+                                    Employee target,
+                                    boolean protectiveMode) {
+        List<Assignment> assignments = new ArrayList<>(schedule.getAssignments());
 
-    /**
-     * Business rule:
-     * if an OPENING employee also has BAR, any BAR slot fully contained
-     * inside that OPENING slot can be downgraded to WAITER.
-     *
-     * This is more realistic than requiring exact same start/end.
-     */
-    public void applyOpeningRule(ShiftSlot assignedSlot, Employee assignedEmployee, WeeklySchedule schedule) {
-        Objects.requireNonNull(assignedSlot, "Assigned slot cannot be null");
-        Objects.requireNonNull(assignedEmployee, "Assigned employee cannot be null");
-        Objects.requireNonNull(schedule, "Schedule cannot be null");
-
-        if (assignedSlot.getRequiredSkill() != Skill.OPENING) {
-            return;
-        }
-
-        if (!assignedEmployee.hasSkill(Skill.BAR)) {
-            return;
-        }
-
-        for (ShiftSlot slot : schedule.getSlots()) {
-            if (slot == assignedSlot) {
-                continue;
-            }
-
-            if (slot.getDay() != assignedSlot.getDay()) {
-                continue;
-            }
-
-            if (slot.getRequiredSkill() != Skill.BAR) {
-                continue;
-            }
-
-            if (isRangeContained(assignedSlot.getRange(), slot.getRange())) {
-                slot.setRequiredSkill(Skill.WAITER);
-            }
-        }
-    }
-
-    // =========================================================
-    // REBALANCE
-    // =========================================================
-
-    private void rebalanceHighPriorityCoverage(WeeklySchedule schedule, List<Employee> employees) {
-        Set<ShiftSlot> lockedSlots = new HashSet<>();
-
-        for (int pass = 0; pass < MAX_REBALANCE_PASSES; pass++) {
-            boolean improved = false;
-
-            List<Employee> highTargets = employees.stream()
-                    .filter(employee -> employee.getPriority() == Priority.HIGH)
-                    .filter(employee -> schedule.getRemainingHours(employee) > 0)
-                    .sorted(
-                            Comparator.comparingInt((Employee employee) -> getHighPriorityUrgency(employee, schedule))
-                                    .reversed()
-                                    .thenComparing(Employee::getName)
-                    )
-                    .toList();
-
-            for (Employee target : highTargets) {
-                if (tryImproveHighEmployee(target, schedule, lockedSlots)) {
-                    improved = true;
-                }
-            }
-
-            if (!improved) {
-                return;
-            }
-        }
-    }
-
-    private boolean tryImproveHighEmployee(Employee target,
-                                           WeeklySchedule schedule,
-                                           Set<ShiftSlot> lockedSlots) {
-        List<ShiftSlot> candidates = getRebalanceCandidateSlots(schedule);
-
-        for (ShiftSlot desiredSlot : candidates) {
-            if (lockedSlots.contains(desiredSlot)) {
-                continue;
-            }
-
-            if (isAssignedTo(schedule, desiredSlot, target)) {
-                continue;
-            }
-
-            if (!canAssignEmployeeToSlot(target, desiredSlot, schedule, Set.of())) {
-                continue;
-            }
-
-            Optional<Assignment> currentAssignment = schedule.getAssignment(desiredSlot);
-
-            if (currentAssignment.isEmpty()) {
-                schedule.assign(desiredSlot, target);
-                lockedSlots.add(desiredSlot);
-
-                debugRebalance(
-                        "REBALANCE DIRECT",
-                        target.getName() + " takes free slot " + slotLabel(desiredSlot)
-                );
-                return true;
-            }
-
-            Employee incumbent = currentAssignment.get().getEmployee();
-
-            if (incumbent.getPriority() == Priority.HIGH) {
-                continue;
-            }
-
-            if (!isTakeoverWorthIt(target, incumbent, desiredSlot, schedule)) {
-                continue;
-            }
-
-            if (tryMoveIncumbentToFreeSlot(target, incumbent, desiredSlot, schedule, lockedSlots)) {
-                return true;
-            }
-
-            if (tryTakeSlotByDroppingIncumbent(target, incumbent, desiredSlot, schedule, lockedSlots)) {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    private List<ShiftSlot> getRebalanceCandidateSlots(WeeklySchedule schedule) {
-        List<ShiftSlot> ordered = new ArrayList<>(schedule.getSlots());
-
-        ordered.sort(
-                Comparator.comparingInt((ShiftSlot slot) -> getRebalancePreference(slot.getRequiredSkill()))
-                        .thenComparingInt(slot -> getDayPriority(slot.getDay()))
-                        .thenComparingLong(slot -> -slot.durationMinutes())
-                        .thenComparing(slot -> slot.getRange().getStart())
+        assignments.sort(
+                Comparator.comparing((Assignment a) -> takeoverSlotPriority(a.getSlot()))
+                        .thenComparing(a -> schedule.getAssignedMinutes(a.getEmployee()), Comparator.reverseOrder())
         );
 
-        return ordered;
-    }
+        for (Assignment assignment : assignments) {
+            Employee donor = assignment.getEmployee();
+            ShiftSlot slot = assignment.getSlot();
 
-    private int getRebalancePreference(Skill skill) {
-        return switch (skill) {
-            case WAITER -> 1;
-            case RUNNER -> 2;
-            case OPENING -> 3;
-            case BAR -> 4;
-            case KITCHEN -> 5;
-            case RESP -> 6;
-        };
-    }
-
-    private boolean tryMoveIncumbentToFreeSlot(Employee target,
-                                               Employee incumbent,
-                                               ShiftSlot desiredSlot,
-                                               WeeklySchedule schedule,
-                                               Set<ShiftSlot> lockedSlots) {
-        List<ShiftSlot> freeSlots = new ArrayList<>(schedule.getUnassignedSlots());
-
-        freeSlots.sort(
-                Comparator.comparingInt((ShiftSlot slot) -> getRelocationPreference(slot.getRequiredSkill()))
-                        .thenComparingInt(slot -> getDayPriority(slot.getDay()))
-                        .thenComparingLong(slot -> -slot.durationMinutes())
-                        .thenComparing(slot -> slot.getRange().getStart())
-        );
-
-        for (ShiftSlot relocationSlot : freeSlots) {
-            if (lockedSlots.contains(relocationSlot)) {
+            if (donor.equals(target)) {
                 continue;
             }
 
-            if (!canAssignEmployeeToSlot(incumbent, relocationSlot, schedule, Set.of(desiredSlot))) {
+            if (!isTakeoverSlot(slot)) {
                 continue;
             }
 
-            if (!isRelocationReasonable(incumbent, desiredSlot, relocationSlot)) {
+            if (!canTakeOver(schedule, target, donor, slot, protectiveMode)) {
                 continue;
             }
 
-            schedule.unassign(desiredSlot);
+            schedule.unassign(slot);
+            assign(schedule, slot, target);
 
-            boolean success = false;
-            try {
-                if (!canAssignEmployeeToSlot(target, desiredSlot, schedule, Set.of())) {
-                    continue;
-                }
-
-                schedule.assign(desiredSlot, target);
-                schedule.assign(relocationSlot, incumbent);
-
-                lockedSlots.add(desiredSlot);
-                lockedSlots.add(relocationSlot);
-
-                debugRebalance(
-                        "REBALANCE MOVE",
-                        target.getName() + " takes " + slotLabel(desiredSlot)
-                                + " | " + incumbent.getName() + " moved to " + slotLabel(relocationSlot)
-                );
-
-                success = true;
-                return true;
-            } finally {
-                if (!success && !schedule.isAssigned(desiredSlot)) {
-                    schedule.assign(desiredSlot, incumbent);
-                }
-            }
-        }
-
-        return false;
-    }
-
-    private boolean tryTakeSlotByDroppingIncumbent(Employee target,
-                                                   Employee incumbent,
-                                                   ShiftSlot desiredSlot,
-                                                   WeeklySchedule schedule,
-                                                   Set<ShiftSlot> lockedSlots) {
-        if (incumbent.getPriority() == Priority.HIGH) {
-            return false;
-        }
-
-        if (isVeryProtectedSkill(desiredSlot.getRequiredSkill())) {
-            return false;
-        }
-
-        if (incumbent.getPriority() == Priority.MEDIUM && isCriticalSkill(desiredSlot.getRequiredSkill())) {
-            return false;
-        }
-
-        schedule.unassign(desiredSlot);
-
-        boolean success = false;
-        try {
-            if (!canAssignEmployeeToSlot(target, desiredSlot, schedule, Set.of())) {
-                return false;
+            if (DEBUG) {
+                System.out.println("------------------------------------------------------------");
+                System.out.println(protectiveMode ? "REBALANCE TAKEOVER" : "REBALANCE RESIDUAL HIGH");
+                System.out.println("------------------------------------------------------------");
+                System.out.println(target.getName()
+                        + " takes "
+                        + slot.getDay() + " "
+                        + slot.getRange()
+                        + " [" + slot.getRequiredSkill() + "] from "
+                        + donor.getName());
+                System.out.println();
             }
 
-            schedule.assign(desiredSlot, target);
-            lockedSlots.add(desiredSlot);
-
-            debugRebalance(
-                    "REBALANCE TAKEOVER",
-                    target.getName() + " takes " + slotLabel(desiredSlot)
-                            + " from " + incumbent.getName()
-            );
-
-            success = true;
             return true;
-        } finally {
-            if (!success && !schedule.isAssigned(desiredSlot)) {
-                schedule.assign(desiredSlot, incumbent);
-            }
-        }
-    }
-
-    private boolean isTakeoverWorthIt(Employee target,
-                                      Employee incumbent,
-                                      ShiftSlot slot,
-                                      WeeklySchedule schedule) {
-        if (target.getPriority() != Priority.HIGH) {
-            return false;
-        }
-
-        if (incumbent.getPriority() == Priority.HIGH) {
-            return false;
-        }
-
-        if (isVeryProtectedSkill(slot.getRequiredSkill())) {
-            return false;
-        }
-
-        int targetRole = getRoleFitScore(target, slot);
-        int incumbentRole = getRoleFitScore(incumbent, slot);
-
-        double targetMissing = schedule.getRemainingHours(target);
-        double incumbentMissing = schedule.getRemainingHours(incumbent);
-
-        if (slot.getRequiredSkill() == Skill.WAITER) {
-            if (schedule.getRemainingHours(target) <= 6.0) {
-                return false;
-            }
-
-            return targetMissing > 0
-                    && target.getPriority() == Priority.HIGH
-                    && incumbent.getPriority() != Priority.HIGH
-                    && targetRole > 0
-                    && (
-                    targetRole >= incumbentRole
-                            || getOpportunityPressureScore(target, slot) >= 60
-            )
-                    && (targetMissing > incumbentMissing || incumbent.getPriority() == Priority.LOW);
-        }
-
-        if (slot.getRequiredSkill() == Skill.RUNNER) {
-            if (schedule.getRemainingHours(target) <= 6.0) {
-                return false;
-            }
-
-            return targetMissing > 0
-                    && target.getPriority() == Priority.HIGH
-                    && incumbent.getPriority() != Priority.HIGH
-                    && targetRole >= incumbentRole
-                    && (targetMissing > incumbentMissing || incumbent.getPriority() == Priority.LOW);
-        }
-
-        if (slot.getRequiredSkill() == Skill.OPENING || slot.getRequiredSkill() == Skill.BAR) {
-            return targetRole >= incumbentRole
-                    && targetMissing > 0
-                    && incumbent.getPriority() != Priority.HIGH;
         }
 
         return false;
     }
 
-    private boolean isRelocationReasonable(Employee incumbent,
-                                           ShiftSlot originalSlot,
-                                           ShiftSlot relocationSlot) {
-        int originalPreference = getRelocationPreference(originalSlot.getRequiredSkill());
-        int relocationPreference = getRelocationPreference(relocationSlot.getRequiredSkill());
-
-        if (relocationPreference > originalPreference + 1) {
+    private boolean canTakeOver(WeeklySchedule schedule,
+                                Employee target,
+                                Employee donor,
+                                ShiftSlot slot,
+                                boolean protectiveMode) {
+        if (!canAssign(schedule, target, slot)) {
             return false;
         }
 
-        return getRoleFitScore(incumbent, relocationSlot) > 0;
-    }
-
-    private int getRelocationPreference(Skill skill) {
-        return switch (skill) {
-            case WAITER -> 1;
-            case RUNNER -> 2;
-            case KITCHEN -> 3;
-            case OPENING -> 4;
-            case BAR -> 5;
-            case RESP -> 6;
-        };
-    }
-
-    private boolean isAssignedTo(WeeklySchedule schedule, ShiftSlot slot, Employee employee) {
-        Optional<Assignment> assignment = schedule.getAssignment(slot);
-        return assignment.isPresent() && assignment.get().getEmployee().equals(employee);
-    }
-
-    private boolean canAssignEmployeeToSlot(Employee employee,
-                                            ShiftSlot slot,
-                                            WeeklySchedule schedule,
-                                            Collection<ShiftSlot> ignoredOwnedSlots) {
-        Objects.requireNonNull(employee, "Employee cannot be null");
-        Objects.requireNonNull(slot, "Shift slot cannot be null");
-        Objects.requireNonNull(schedule, "Schedule cannot be null");
-        Objects.requireNonNull(ignoredOwnedSlots, "Ignored owned slots cannot be null");
-
-        LocalDate slotDate = schedule.getDateFor(slot);
-
-        if (!employee.isAssignableTo(slot, slotDate)) {
+        long targetMissing = getMissingMinutes(schedule, target);
+        if (targetMissing <= 0) {
             return false;
         }
 
-        double remainingHours = schedule.getRemainingHours(employee);
-        long assignedToday = schedule.getAssignedMinutesFor(employee, slot.getDay());
+        if (slot.getRequiredSkill() == Skill.RESP) {
+            return false;
+        }
 
-        for (ShiftSlot ignored : ignoredOwnedSlots) {
-            Optional<Assignment> assignment = schedule.getAssignment(ignored);
-            if (assignment.isPresent() && assignment.get().getEmployee().equals(employee)) {
-                remainingHours += ignored.durationMinutes() / 60.0;
-
-                if (ignored.getDay() == slot.getDay()) {
-                    assignedToday -= ignored.durationMinutes();
-                }
+        if (protectiveMode) {
+            if (isHigh(donor) && isCriticalHighEmployee(donor)) {
+                return false;
             }
-        }
-
-        if (remainingHours < slot.durationMinutes() / 60.0) {
-            return false;
-        }
-
-        if (assignedToday + slot.durationMinutes() > MAX_DAILY_MINUTES) {
-            return false;
-        }
-
-        for (Assignment assignment : schedule.getAssignmentsFor(employee)) {
-            ShiftSlot current = assignment.getSlot();
-
-            if (ignoredOwnedSlots.contains(current)) {
-                continue;
-            }
-
-            if (current.overlaps(slot)) {
+        } else {
+            if (isRespHigh(donor)) {
                 return false;
             }
         }
@@ -570,422 +338,404 @@ public class ShiftScheduler {
         return true;
     }
 
-    // =========================================================
+    // ============================================================
+    // ASSIGNMENT HELPERS
+    // ============================================================
+
+    private void assign(WeeklySchedule schedule, ShiftSlot slot, Employee employee) {
+        schedule.assign(slot, employee);
+        applyOpeningRule(schedule, employee, slot);
+    }
+
+    private void applyOpeningRule(WeeklySchedule schedule, Employee employee, ShiftSlot slot) {
+        if (slot.getRequiredSkill() != Skill.OPENING) {
+            return;
+        }
+
+        if (!employee.hasSkill(Skill.BAR)) {
+            return;
+        }
+
+        for (ShiftSlot other : schedule.getSlots()) {
+            if (other == slot) {
+                continue;
+            }
+
+            if (other.getRequiredSkill() == Skill.BAR
+                    && other.getDay().equals(slot.getDay())
+                    && other.sameMomentAs(slot)) {
+                other.setRequiredSkill(Skill.WAITER);
+            }
+        }
+    }
+
+    // ============================================================
     // SCORING
-    // =========================================================
+    // ============================================================
 
-    private int calculateCandidateScore(Employee employee, ShiftSlot slot, WeeklySchedule schedule) {
-        int roleFitScore = getRoleFitScore(employee, slot);
-        int hoursBalanceScore = getHoursBalanceScore(employee, schedule, slot);
-        int contractPriorityScore = getContractPriorityScore(employee, slot);
-        int scarcityScore = getWeightedScarcityScore(employee, slot);
-        int opportunityScore = getOpportunityPressureScore(employee, slot);
-        int sameDayContinuityBonus = getSameDayContinuityBonus(employee, slot, schedule);
-        int criticalSkillProtectionPenalty = getCriticalSkillProtectionPenalty(employee, slot);
-
-        return roleFitScore
-                + hoursBalanceScore
-                + contractPriorityScore
-                + scarcityScore
-                + opportunityScore
-                + sameDayContinuityBonus
-                + criticalSkillProtectionPenalty;
-    }
-
-    /**
-     * Role fit dominates critical slots.
-     */
-    private int getRoleFitScore(Employee employee, ShiftSlot slot) {
-        int proficiency = getProficiencyScore(employee, slot.getRequiredSkill());
-
-        if (proficiency == 0) {
+    private int scoreRole(Employee employee, Skill requiredSkill, AssignmentPhase phase) {
+        if (!employee.hasSkill(requiredSkill)) {
             return 0;
         }
 
-        if (slot.getRequiredSkill() == Skill.RESP) {
-            return proficiency * 140;
-        }
+        Proficiency proficiency = employee.getProficiency(requiredSkill);
 
-        if (slot.getRequiredSkill() == Skill.OPENING || slot.getRequiredSkill() == Skill.BAR) {
-            return proficiency * 140;
-        }
-
-        if (slot.getRequiredSkill() == Skill.WAITER || slot.getRequiredSkill() == Skill.RUNNER) {
-            return proficiency * 85;
-        }
-
-        return proficiency * 85;
-    }
-
-    /**
-     * Hours score is stronger on non-critical roles because those are
-     * the main compensation area for contractual staff.
-     */
-    private int getHoursBalanceScore(Employee employee, WeeklySchedule schedule, ShiftSlot slot) {
-        double remainingHours = Math.max(0.0, schedule.getRemainingHours(employee));
-        double agreedHours = Math.max(1.0, employee.getAgreedHours());
-
-        int relativeScore = (int) Math.round((remainingHours / agreedHours) * 100.0);
-        int absoluteScore = (int) Math.min(80, Math.round(remainingHours * 5.0));
-
-        if (slot.getRequiredSkill() == Skill.WAITER || slot.getRequiredSkill() == Skill.RUNNER) {
-            return relativeScore + absoluteScore;
-        }
-
-        if (slot.getRequiredSkill() == Skill.OPENING || slot.getRequiredSkill() == Skill.BAR) {
-            return relativeScore + (absoluteScore / 2);
-        }
-
-        if (slot.getRequiredSkill() == Skill.RESP) {
-            return relativeScore + (absoluteScore / 3);
-        }
-
-        return relativeScore + (absoluteScore / 2);
-    }
-
-    /**
-     * HIGH priority means contractual pressure.
-     * Stronger on non-critical roles, where recovery should happen.
-     */
-    private int getContractPriorityScore(Employee employee, ShiftSlot slot) {
-        int base = switch (employee.getPriority()) {
-            case HIGH -> 3;
-            case MEDIUM -> 2;
-            case LOW -> 1;
+        int base = switch (proficiency) {
+            case HIGH -> SCORE_ROLE_HIGH;
+            case MID -> SCORE_ROLE_MID;
+            case LOW -> SCORE_ROLE_LOW;
         };
 
-        if (slot.getRequiredSkill() == Skill.WAITER || slot.getRequiredSkill() == Skill.RUNNER) {
-            return base * 12;
+        if (phase == AssignmentPhase.RESP && requiredSkill == Skill.RESP && isHigh(employee)) {
+            base += BONUS_RESP_CRITICAL;
         }
 
-        if (slot.getRequiredSkill() == Skill.OPENING || slot.getRequiredSkill() == Skill.BAR) {
-            return base * 6;
+        if (phase == AssignmentPhase.CRITICAL_HIGH && isHigh(employee) && isCriticalHighEmployee(employee)) {
+            base += BONUS_CRITICAL_HIGH_PHASE;
         }
 
-        if (slot.getRequiredSkill() == Skill.RESP) {
-            return base * 6;
-        }
-
-        return base * 4;
+        return base;
     }
 
-    /**
-     * General weekly scarcity.
-     */
-    private int getWeightedScarcityScore(Employee employee, ShiftSlot slot) {
-        int scarcity = getWeeklyAvailabilityScarcityScore(employee);
-
-        if (slot.getRequiredSkill() == Skill.WAITER || slot.getRequiredSkill() == Skill.RUNNER) {
-            return scarcity * 6;
-        }
-
-        return scarcity * 2;
+    private int scoreHours(WeeklySchedule schedule, Employee employee) {
+        return (int) Math.max(0, getMissingMinutes(schedule, employee) / 4);
     }
 
-    /**
-     * Strong boost when a HIGH employee has very few useful remaining days,
-     * especially on Fri/Sat/Sun and especially on non-critical roles.
-     */
-    private int getOpportunityPressureScore(Employee employee, ShiftSlot slot) {
-        if (employee.getPriority() != Priority.HIGH) {
-            return 0;
-        }
-
-        int availableDays = getAvailableDays(employee);
-        if (availableDays > 3) {
-            return 0;
-        }
-
-        boolean weekendLike = slot.getDay() == DayOfWeek.FRIDAY
-                || slot.getDay() == DayOfWeek.SATURDAY
-                || slot.getDay() == DayOfWeek.SUNDAY;
-
-        if (!weekendLike) {
-            return 0;
-        }
-
-        return switch (slot.getRequiredSkill()) {
-            case WAITER, RUNNER -> 60;
-            case RESP -> 45;
-            case OPENING, BAR -> 30;
-            case KITCHEN -> 0;
+    private int scorePriority(Employee employee) {
+        return switch (employee.getPriority()) {
+            case HIGH -> SCORE_PRIORITY_HIGH;
+            case MEDIUM -> SCORE_PRIORITY_MEDIUM;
+            case LOW -> SCORE_PRIORITY_LOW;
         };
     }
 
-    private int getSameDayContinuityBonus(Employee employee, ShiftSlot slot, WeeklySchedule schedule) {
-        long assignedMinutes = schedule.getAssignedMinutesFor(employee, slot.getDay());
+    private int scoreOpportunity(Employee employee, Skill requiredSkill, AssignmentPhase phase) {
+        int score = 0;
 
-        if (assignedMinutes <= 0) {
+        if ((phase == AssignmentPhase.CRITICAL_HIGH || phase == AssignmentPhase.REBALANCE_HIGH)
+                && isRespEmployee(employee)
+                && requiredSkill != Skill.RESP) {
+            score += BONUS_OPPORTUNITY_RESP;
+        }
+
+        return score;
+    }
+
+    private int scoreContinuity(WeeklySchedule schedule, Employee employee, ShiftSlot slot) {
+        List<Assignment> dayAssignments = schedule.getAssignmentsFor(employee).stream()
+                .filter(a -> a.getSlot().getDay().equals(slot.getDay()))
+                .toList();
+
+        for (Assignment assignment : dayAssignments) {
+            ShiftSlot existing = assignment.getSlot();
+
+            if (existing.getRange().getEnd().equals(slot.getRange().getStart())
+                    || slot.getRange().getEnd().equals(existing.getRange().getStart())) {
+                return BONUS_CONTINUITY;
+            }
+        }
+
+        return 0;
+    }
+
+    private int scoreProtect(Employee employee, Skill requiredSkill, AssignmentPhase phase) {
+        if (phase == AssignmentPhase.STANDARD && isHigh(employee) && isCriticalHighEmployee(employee)) {
+            return PENALTY_PROTECT_CRITICAL;
+        }
+
+        if (phase == AssignmentPhase.CRITICAL_HIGH && isRespEmployee(employee) && requiredSkill != Skill.RESP) {
+            return PENALTY_RESP_USED_OUTSIDE_ROLE;
+        }
+
+        return 0;
+    }
+
+    private int scoreLate(ShiftSlot slot) {
+        String end = slot.getRange().getEnd().toString();
+
+        if ("00:00".equals(end) || "00:30".equals(end) || "01:00".equals(end)) {
+            return 84;
+        }
+        if ("23:00".equals(end) || "23:30".equals(end)) {
+            return 64;
+        }
+        if ("22:00".equals(end) || "22:30".equals(end)) {
+            return 40;
+        }
+        return 0;
+    }
+
+    private int scoreFutureCriticalProtection(WeeklySchedule schedule,
+                                              Employee employee,
+                                              ShiftSlot currentSlot,
+                                              AssignmentPhase phase) {
+        if (phase != AssignmentPhase.RESP && phase != AssignmentPhase.CRITICAL_HIGH) {
             return 0;
         }
 
-        if (slot.getRequiredSkill() == Skill.WAITER || slot.getRequiredSkill() == Skill.RUNNER) {
-            return (int) Math.min(15, assignedMinutes / 60);
+        int count = 0;
+
+        for (ShiftSlot slot : schedule.getUnassignedSlots()) {
+            if (slot == currentSlot) {
+                continue;
+            }
+
+            if (dayPriority(slot.getDay()) >= dayPriority(currentSlot.getDay())) {
+                continue;
+            }
+
+            Skill skill = slot.getRequiredSkill();
+            if ((skill == Skill.RESP || skill == Skill.OPENING || skill == Skill.BAR)
+                    && employee.hasSkill(skill)) {
+                count++;
+            }
         }
 
-        return (int) Math.min(8, assignedMinutes / 120);
+        return count * 10;
     }
 
-    /**
-     * Protect RESP employees from being overused on non-critical roles.
-     * However if they are HIGH and heavily under hours, the penalty is softened.
-     */
-    private int getCriticalSkillProtectionPenalty(Employee employee, ShiftSlot slot) {
-        Skill requiredSkill = slot.getRequiredSkill();
-
-        if (requiredSkill == Skill.RESP) {
+    private int scoreFlex(Employee employee, AssignmentPhase phase) {
+        if (phase == AssignmentPhase.RESP) {
             return 0;
         }
 
-        if (requiredSkill == Skill.OPENING || requiredSkill == Skill.BAR) {
-            return 0;
-        }
-
-        if (!employee.hasSkill(Skill.RESP)) {
-            return 0;
-        }
-
-        if (employee.getPriority() == Priority.HIGH) {
-            return -30;
-        }
-
-        return -60;
-    }
-
-    private int getWeeklyAvailabilityScarcityScore(Employee employee) {
-        int availableDays = getAvailableDays(employee);
-        return Math.max(0, 7 - availableDays);
-    }
-
-    private int getAvailableDays(Employee employee) {
-        int fullDaysOff = employee.getAvailability().getFullDaysOff().size();
-        return Math.max(0, 7 - fullDaysOff);
-    }
-
-    private int getHighPriorityUrgency(Employee employee, WeeklySchedule schedule) {
-        int missing = (int) Math.round(schedule.getRemainingHours(employee) * 10.0);
-        int scarcity = getWeeklyAvailabilityScarcityScore(employee) * 10;
-        return missing + scarcity;
-    }
-
-    private boolean isCriticalSkill(Skill skill) {
-        return skill == Skill.RESP
-                || skill == Skill.OPENING
-                || skill == Skill.BAR;
-    }
-
-    private boolean isVeryProtectedSkill(Skill skill) {
-        return skill == Skill.RESP;
-    }
-
-    private int getBusinessSkillPriority(Skill skill) {
-        return switch (skill) {
-            case RESP -> 1;
-            case OPENING -> 2;
-            case BAR -> 3;
-            case KITCHEN -> 4;
-            case WAITER -> 5;
-            case RUNNER -> 6;
+        return switch (employee.getPriority()) {
+            case HIGH -> 20;
+            case MEDIUM -> 12;
+            case LOW -> 6;
         };
     }
 
-    private int getDayPriority(DayOfWeek day) {
-        return switch (day) {
-            case SATURDAY -> 1;
-            case FRIDAY -> 2;
-            case SUNDAY -> 3;
-            case THURSDAY -> 4;
-            case WEDNESDAY -> 5;
-            case TUESDAY -> 6;
-            case MONDAY -> 7;
-        };
-    }
+    // ============================================================
+    // BUSINESS RULES
+    // ============================================================
 
-    private int getProficiencyScore(Employee employee, Skill skill) {
-        Proficiency proficiency = employee.getSkills().getProficiency(skill);
+    private boolean canAssign(WeeklySchedule schedule, Employee employee, ShiftSlot slot) {
+        LocalDate date = schedule.getDateFor(slot);
 
-        if (proficiency == null) {
-            return 0;
-        }
-
-        return switch (proficiency) {
-            case LOW -> 1;
-            case MID -> 2;
-            case HIGH -> 3;
-        };
-    }
-
-    // =========================================================
-    // TIME HELPERS
-    // =========================================================
-
-    private boolean isRangeContained(TimeRange outer, TimeRange inner) {
-        int outerStart = toMinute(outer.getStart());
-        int outerEnd = normalizedEndMinute(outer);
-
-        int innerStart = toMinute(inner.getStart());
-        int innerEnd = normalizedEndMinute(inner);
-
-        if (inner.crossesMidnight() && !outer.crossesMidnight()) {
+        if (!employee.isAssignableTo(slot, date)) {
             return false;
         }
 
-        if (outer.crossesMidnight() && !inner.crossesMidnight() && innerStart < toMinute(outer.getEnd())) {
-            innerStart += 24 * 60;
-            innerEnd += 24 * 60;
+        if (schedule.hasOverlappingAssignment(employee, slot)) {
+            return false;
         }
 
-        return innerStart >= outerStart && innerEnd <= outerEnd;
+        long currentDayMinutes = schedule.getAssignedMinutesFor(employee, slot.getDay());
+        long newTotal = currentDayMinutes + slot.durationMinutes();
+
+        return newTotal <= MAX_DAILY_MINUTES;
     }
 
-    private int toMinute(LocalTime time) {
-        return time.getHour() * 60 + time.getMinute();
+    private boolean isHigh(Employee employee) {
+        return employee.getPriority() == Priority.HIGH;
     }
 
-    private int normalizedEndMinute(TimeRange range) {
-        int end = toMinute(range.getEnd());
-        return range.crossesMidnight() ? end + 24 * 60 : end;
+    private boolean isRespEmployee(Employee employee) {
+        return employee.hasSkill(Skill.RESP);
     }
 
-    // =========================================================
+    private boolean isRespHigh(Employee employee) {
+        return isHigh(employee) && isRespEmployee(employee);
+    }
+
+    private boolean isCriticalHighEmployee(Employee employee) {
+        return employee.hasSkill(Skill.RESP)
+                || employee.hasSkill(Skill.OPENING)
+                || employee.hasSkill(Skill.BAR);
+    }
+
+    private boolean isTakeoverSlot(ShiftSlot slot) {
+        return slot.getRequiredSkill() != Skill.RESP;
+    }
+
+    private long getAgreedMinutes(Employee employee) {
+        return employee.getAgreedHours() * 60L;
+    }
+
+    private long getMissingMinutes(WeeklySchedule schedule, Employee employee) {
+        return Math.max(0, getAgreedMinutes(employee) - schedule.getAssignedMinutes(employee));
+    }
+
+    // ============================================================
+    // SORTING
+    // ============================================================
+
+    private Comparator<ShiftSlot> respSlotComparator() {
+        return Comparator
+                .comparingInt((ShiftSlot slot) -> dayPriority(slot.getDay()))
+                .thenComparingInt(slot -> criticalWindowPriority(slot))
+                .thenComparingLong(ShiftSlot::durationMinutes)
+                .reversed();
+    }
+
+    private Comparator<ShiftSlot> generalSlotComparator() {
+        return Comparator
+                .comparingInt((ShiftSlot slot) -> skillPriority(slot.getRequiredSkill()))
+                .thenComparingInt(slot -> dayPriority(slot.getDay()))
+                .thenComparingLong(ShiftSlot::durationMinutes)
+                .reversed();
+    }
+
+    private int skillPriority(Skill skill) {
+        return switch (skill) {
+            case RESP -> 600;
+            case OPENING -> 500;
+            case BAR -> 400;
+            case KITCHEN -> 300;
+            case WAITER -> 200;
+            case RUNNER -> 100;
+        };
+    }
+
+    private int dayPriority(DayOfWeek day) {
+        return switch (day) {
+            case SATURDAY -> 700;
+            case SUNDAY -> 600;
+            case FRIDAY -> 500;
+            case THURSDAY -> 400;
+            case WEDNESDAY -> 300;
+            case TUESDAY -> 200;
+            case MONDAY -> 100;
+        };
+    }
+
+    private int criticalWindowPriority(ShiftSlot slot) {
+        String start = slot.getRange().getStart().toString();
+
+        if (start.compareTo("16:00") >= 0) {
+            return 100;
+        }
+        if (start.compareTo("11:00") >= 0) {
+            return 60;
+        }
+        return 20;
+    }
+
+    private int takeoverSlotPriority(ShiftSlot slot) {
+        return switch (slot.getRequiredSkill()) {
+            case WAITER -> 1;
+            case RUNNER -> 2;
+            case BAR -> 3;
+            case OPENING -> 4;
+            case KITCHEN -> 5;
+            case RESP -> 99;
+        };
+    }
+
+    // ============================================================
     // DEBUG
-    // =========================================================
+    // ============================================================
 
-    private void debugSlotHeader(ShiftSlot slot, WeeklySchedule schedule, List<Employee> candidates) {
+    private void debugHeader(String title) {
         if (!DEBUG) {
             return;
         }
 
-        LocalDate date = schedule.getDateFor(slot);
-
+        System.out.println("------------------------------------------------------------");
+        System.out.println(title);
+        System.out.println("------------------------------------------------------------");
         System.out.println();
+    }
+
+    private void printDebugBlock(WeeklySchedule schedule,
+                                 ShiftSlot slot,
+                                 List<CandidateScore> candidates) {
         System.out.println("============================================================");
         System.out.println("SCHEDULER DEBUG");
         System.out.println("============================================================");
-        System.out.printf(
-                "Slot: %s %s %s-%s [%s] | candidates: %d%n",
-                slot.getDay(),
-                date,
-                slot.getRange().getStart(),
-                slot.getRange().getEnd(),
-                slot.getRequiredSkill(),
-                candidates.size()
-        );
-    }
-
-    private void debugCandidateBreakdown(ShiftSlot slot, WeeklySchedule schedule, List<Employee> candidates) {
-        if (!DEBUG) {
-            return;
-        }
-
-        List<Employee> ordered = new ArrayList<>(candidates);
-        ordered.sort(Comparator
-                .comparingInt((Employee employee) -> calculateCandidateScore(employee, slot, schedule))
-                .reversed()
-                .thenComparing(Employee::getName));
-
+        System.out.println("Slot: " + slot.getDay()
+                + " " + schedule.getDateFor(slot)
+                + " " + slot.getRange()
+                + " [" + slot.getRequiredSkill() + "]"
+                + " | candidates: " + candidates.size());
         System.out.println("Candidates:");
 
-        for (Employee employee : ordered) {
-            int roleFitScore = getRoleFitScore(employee, slot);
-            int hoursBalanceScore = getHoursBalanceScore(employee, schedule, slot);
-            int contractPriorityScore = getContractPriorityScore(employee, slot);
-            int scarcityScore = getWeightedScarcityScore(employee, slot);
-            int opportunityScore = getOpportunityPressureScore(employee, slot);
-            int sameDayContinuityBonus = getSameDayContinuityBonus(employee, slot, schedule);
-            int criticalSkillProtectionPenalty = getCriticalSkillProtectionPenalty(employee, slot);
-
-            int total = roleFitScore
-                    + hoursBalanceScore
-                    + contractPriorityScore
-                    + scarcityScore
-                    + opportunityScore
-                    + sameDayContinuityBonus
-                    + criticalSkillProtectionPenalty;
-
-            double assignedHours = schedule.getAssignedHours(employee);
-            double remainingHours = schedule.getRemainingHours(employee);
-            int availableDays = getAvailableDays(employee);
+        for (CandidateScore c : candidates) {
+            Employee e = c.employee();
+            long assigned = schedule.getAssignedMinutes(e);
+            long missing = getMissingMinutes(schedule, e);
 
             System.out.printf(
-                    "- %-15s total=%4d | role=%3d | hrs=%3d | pri=%2d | scarce=%2d | opp=%3d | cont=%2d | protect=%4d | assigned=%4.1f | missing=%4.1f | availDays=%d%n",
-                    employee.getName(),
-                    total,
-                    roleFitScore,
-                    hoursBalanceScore,
-                    contractPriorityScore,
-                    scarcityScore,
-                    opportunityScore,
-                    sameDayContinuityBonus,
-                    criticalSkillProtectionPenalty,
-                    assignedHours,
-                    remainingHours,
-                    availableDays
+                    Locale.US,
+                    "- %-15s total=%4d | role=%3d | hrs=%3d | pri=%2d | opp=%3d | cont=%2d | protect=%4d | late=%3d | future=%3d | flex=%3d | assigned=%5s | missing=%5s%n",
+                    e.getName(),
+                    c.total(),
+                    c.role(),
+                    c.hours(),
+                    c.priority(),
+                    c.opportunity(),
+                    c.continuity(),
+                    c.protect(),
+                    c.late(),
+                    c.future(),
+                    c.flex(),
+                    formatHours(assigned),
+                    formatHours(missing)
             );
         }
     }
 
-    private void debugSelectedEmployee(ShiftSlot slot, Employee employee, WeeklySchedule schedule) {
-        if (!DEBUG) {
-            return;
-        }
+    private void printHoursSummary(WeeklySchedule schedule, List<Employee> employees) {
+        System.out.println("------------------------------------------------------------");
+        System.out.println("HOURS SUMMARY");
+        System.out.println("------------------------------------------------------------");
 
-        System.out.printf(
-                "Selected: %s for %s %s-%s [%s] | assigned now: %.1fh | remaining: %.1fh%n",
-                employee.getName(),
-                slot.getDay(),
-                slot.getRange().getStart(),
-                slot.getRange().getEnd(),
-                slot.getRequiredSkill(),
-                schedule.getAssignedHours(employee),
-                schedule.getRemainingHours(employee)
-        );
-    }
+        List<Employee> sorted = employees.stream()
+                .sorted(Comparator.comparing(Employee::getName))
+                .collect(Collectors.toList());
 
-    private void debugNoCandidates(ShiftSlot slot) {
-        if (!DEBUG) {
-            return;
-        }
+        for (Employee employee : sorted) {
+            long assigned = schedule.getAssignedMinutes(employee);
+            long agreed = getAgreedMinutes(employee);
+            long missing = Math.max(0, agreed - assigned);
 
-        System.out.printf(
-                "No eligible candidates for slot %s %s-%s [%s]%n",
-                slot.getDay(),
-                slot.getRange().getStart(),
-                slot.getRange().getEnd(),
-                slot.getRequiredSkill()
-        );
-    }
-
-    private void debugNoSelection(ShiftSlot slot) {
-        if (!DEBUG) {
-            return;
-        }
-
-        System.out.printf(
-                "No selection produced for slot %s %s-%s [%s]%n",
-                slot.getDay(),
-                slot.getRange().getStart(),
-                slot.getRange().getEnd(),
-                slot.getRequiredSkill()
-        );
-    }
-
-    private void debugRebalance(String title, String message) {
-        if (!DEBUG) {
-            return;
+            System.out.printf(
+                    Locale.US,
+                    "%-15s assigned: %6s   agreed: %6s   missing: %6s%n",
+                    employee.getName(),
+                    formatHours(assigned),
+                    formatHours(agreed),
+                    formatHours(missing)
+            );
         }
 
         System.out.println();
-        System.out.println("------------------------------------------------------------");
-        System.out.println(title);
-        System.out.println("------------------------------------------------------------");
-        System.out.println(message);
     }
 
-    private String slotLabel(ShiftSlot slot) {
-        return slot.getDay()
-                + " " + slot.getRange().getStart()
-                + "-" + slot.getRange().getEnd()
-                + " [" + slot.getRequiredSkill() + "]";
+    private String formatHours(long minutes) {
+        long hours = minutes / 60;
+        long rem = minutes % 60;
+        return String.format(Locale.US, "%d,%01dh", hours, rem == 0 ? 0 : 5);
+    }
+
+    // ============================================================
+    // INTERNAL TYPES
+    // ============================================================
+
+    private enum AssignmentPhase {
+        RESP,
+        CRITICAL_HIGH,
+        STANDARD,
+        REBALANCE_HIGH
+    }
+
+    private record CandidateScore(
+            Employee employee,
+            int total,
+            int role,
+            int hours,
+            int priority,
+            int opportunity,
+            int continuity,
+            int protect,
+            int late,
+            int future,
+            int flex
+    ) implements Comparable<CandidateScore> {
+        @Override
+        public int compareTo(CandidateScore other) {
+            return Integer.compare(this.total, other.total);
+        }
     }
 }
