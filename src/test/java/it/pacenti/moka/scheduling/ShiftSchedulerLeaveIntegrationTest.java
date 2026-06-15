@@ -20,8 +20,7 @@ class ShiftSchedulerLeaveIntegrationTest {
 
     @Test
     void shouldNotAssignEmployeeWhenApprovedLeaveOverlapsSlot() {
-        // Arrange
-        LocalDate weekStart = LocalDate.of(2026, 3, 30); // Monday
+        LocalDate weekStart = LocalDate.of(2026, 3, 30);
 
         TimeRange range = new TimeRange(LocalTime.of(10, 0), LocalTime.of(14, 0));
         ShiftSlot slot = new ShiftSlot(DayOfWeek.MONDAY, range, Skill.BAR);
@@ -30,7 +29,12 @@ class ShiftSchedulerLeaveIntegrationTest {
         template.addSlot(slot);
 
         EmployeeFactory factory = new EmployeeFactory();
-        Employee employee = factory.createEmployee("Mario", Priority.MEDIUM, 40, 12);
+        Employee employee = factory.createEmployee(
+                "Barista On Leave Test",
+                Priority.MEDIUM,
+                40,
+                12
+        );
 
         employee.getSkills().addOrUpdate(Skill.BAR, Proficiency.HIGH);
 
@@ -40,21 +44,20 @@ class ShiftSchedulerLeaveIntegrationTest {
                 LeaveType.VACATION,
                 "Approved leave"
         );
+
         employee.addLeave(leave);
 
         ShiftScheduler scheduler = new ShiftScheduler();
 
-        // Act
         WeeklySchedule schedule = scheduler.generateSchedule(template, List.of(employee));
 
-        // Assert
         assertTrue(schedule.getAssignment(slot).isEmpty());
         assertTrue(schedule.getUnassignedSlots().contains(slot));
     }
 
     @Test
     void shouldAssignEmployeeWhenNoLeaveOverlapsSlot() {
-        LocalDate weekStart = LocalDate.of(2026, 3, 30); // Monday
+        LocalDate weekStart = LocalDate.of(2026, 3, 30);
 
         TimeRange range = new TimeRange(LocalTime.of(10, 0), LocalTime.of(14, 0));
         ShiftSlot slot = new ShiftSlot(DayOfWeek.MONDAY, range, Skill.BAR);
@@ -63,7 +66,13 @@ class ShiftSchedulerLeaveIntegrationTest {
         template.addSlot(slot);
 
         EmployeeFactory factory = new EmployeeFactory();
-        Employee employee = factory.createEmployee("Mario", Priority.MEDIUM, 40, 12);
+        Employee employee = factory.createEmployee(
+                "Available Barista Test",
+                Priority.MEDIUM,
+                40,
+                12
+        );
+
         employee.getSkills().addOrUpdate(Skill.BAR, Proficiency.HIGH);
 
         ShiftScheduler scheduler = new ShiftScheduler();

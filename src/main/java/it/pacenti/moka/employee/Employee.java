@@ -18,7 +18,7 @@ public class Employee {
     private final EmployeeSkills skills;
     private final WeeklyAvailability availability;
     private final LeaveCalendar leaveCalendar;
-    private final Priority priority;
+    private Priority priority;
 
     private final int agreedHours;
     private int hourlyCost;
@@ -62,6 +62,13 @@ public class Employee {
 
     public Priority getPriority() {
         return priority;
+    }
+
+    /**
+     * Changes the employee priority in a controlled way.
+     */
+    public void changePriority(Priority newPriority) {
+        this.priority = Objects.requireNonNull(newPriority, "Priority cannot be null");
     }
 
     public EmployeeSkills getSkills() {

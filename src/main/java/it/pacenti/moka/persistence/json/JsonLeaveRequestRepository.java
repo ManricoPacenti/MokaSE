@@ -21,6 +21,10 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 
+/**
+ * JSON-based implementation of LeaveRequestRepository.
+ * It persists leave requests and reconstructs employee references through EmployeeRepository.
+ */
 public class JsonLeaveRequestRepository implements LeaveRequestRepository {
 
     private final Path filePath;
@@ -57,7 +61,7 @@ public class JsonLeaveRequestRepository implements LeaveRequestRepository {
     public LeaveRequest save(LeaveRequest request) {
         Objects.requireNonNull(request, "Leave request cannot be null");
 
-        requestsById.put(request.getId(), request); // update se id già presente
+        requestsById.put(request.getId(), request);
         flushToDisk();
 
         return request;

@@ -48,7 +48,7 @@ public class TimeRange {
      */
     public long durationMinutes() {
         return normalizedEndMinutes() - startMinutes();
-        }
+    }
 
     /**
      * Checks whether the given time belongs to this range.
@@ -68,8 +68,7 @@ public class TimeRange {
     }
 
     /**
-     * Checks overlaps with another range, let the scheduler to didn't assign
-     * the same employee to two time range overlapped
+     * Checks whether this range overlaps another range
      * @return true if the two ranges overlap
      */
     public boolean overlaps(TimeRange other) {

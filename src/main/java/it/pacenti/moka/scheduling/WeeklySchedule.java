@@ -58,7 +58,7 @@ public class WeeklySchedule {
         Objects.requireNonNull(employee, "Employee cannot be null");
 
         if (assignmentsBySlot.containsKey(slot)) {
-            throw new SlotAlreadyAssignedException("Slot is altready assigned");
+            throw new SlotAlreadyAssignedException("Slot is already assigned");
         }
 
         assignmentsBySlot.put(slot, new Assignment(slot, employee));
@@ -186,7 +186,7 @@ public class WeeklySchedule {
     }
 
     /**
-     * Turns weekStart in a real date
+     * Converts the slot day into the corresponding date of this schedule week
      */
     public LocalDate getDateFor(ShiftSlot slot) {
         Objects.requireNonNull(slot, "Shift slot cannot be null");

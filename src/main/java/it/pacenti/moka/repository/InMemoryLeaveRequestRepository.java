@@ -10,6 +10,9 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 
+/**
+ * Repository that stores leave requests in memory.
+ */
 public class InMemoryLeaveRequestRepository implements LeaveRequestRepository {
 
     private final Map<Integer, LeaveRequest> requestsById;

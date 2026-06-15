@@ -47,7 +47,7 @@ public class JsonTemplateRepository implements TemplateRepository {
             writeDocument(document);
 
         } catch (IOException e) {
-            throw new IllegalStateException("Failed to save template: " + name, e);
+            throw new JsonPersistenceException("Failed to save template: " + name, e);
         }
     }
 
@@ -65,7 +65,7 @@ public class JsonTemplateRepository implements TemplateRepository {
                     .map(this::toDomain);
 
         } catch (IOException e) {
-            throw new IllegalStateException("Failed to read template: " + name, e);
+            throw new JsonPersistenceException("Failed to read template: " + name, e);
         }
     }
 
@@ -81,7 +81,7 @@ public class JsonTemplateRepository implements TemplateRepository {
                     .toList();
 
         } catch (IOException e) {
-            throw new IllegalStateException("Failed to read template names", e);
+            throw new JsonPersistenceException("Failed to read template names", e);
         }
     }
 
@@ -106,7 +106,7 @@ public class JsonTemplateRepository implements TemplateRepository {
             return true;
 
         } catch (IOException e) {
-            throw new IllegalStateException("Failed to delete template: " + name, e);
+            throw new JsonPersistenceException("Failed to delete template: " + name, e);
         }
     }
 

@@ -8,6 +8,7 @@ import it.pacenti.moka.employee.EmployeeSkill;
 import it.pacenti.moka.employee.Priority;
 import it.pacenti.moka.employee.Proficiency;
 import it.pacenti.moka.employee.Skill;
+import it.pacenti.moka.exception.TemplateNotInitializedException;
 import it.pacenti.moka.repository.TemplateRepository;
 import it.pacenti.moka.scheduling.ShiftSlot;
 import it.pacenti.moka.scheduling.TimeRange;
@@ -93,12 +94,14 @@ public class ManagerConsoleController {
             io.println("1. Create employee");
             io.println("2. List employees");
             io.println("3. View employee details");
-            io.println("4. Add or update skill");
-            io.println("5. Remove skill");
-            io.println("6. Add weekly unavailability");
-            io.println("7. Add full day off");
-            io.println("8. Create leave request");
-            io.println("9. Back");
+            io.println("4. Change employee priority");
+            io.println("5. Delete employee");
+            io.println("6. Add or update skill");
+            io.println("7. Remove skill");
+            io.println("8. Add weekly unavailability");
+            io.println("9. Add full day off");
+            io.println("10. Create leave request");
+            io.println("11. Back");
             io.println();
 
             int choice = io.readInt("Choose an option: ");
@@ -108,12 +111,14 @@ public class ManagerConsoleController {
                     case 1 -> createEmployee();
                     case 2 -> listEmployees();
                     case 3 -> viewEmployeeDetails();
-                    case 4 -> addOrUpdateSkillToEmployee();
-                    case 5 -> removeSkillFromEmployee();
-                    case 6 -> addWeeklyTimeOff();
-                    case 7 -> addFullDayOff();
-                    case 8 -> createLeaveRequest();
-                    case 9 -> back = true;
+                    case 4 -> changeEmployeePriority();
+                    case 5 -> deleteEmployee();
+                    case 6 -> addOrUpdateSkillToEmployee();
+                    case 7 -> removeSkillFromEmployee();
+                    case 8 -> addWeeklyTimeOff();
+                    case 9 -> addFullDayOff();
+                    case 10 -> createLeaveRequest();
+                    case 11 -> back = true;
                     default -> io.println("Unknown option.");
                 }
             } catch (Exception ex) {
@@ -254,6 +259,36 @@ public class ManagerConsoleController {
         io.println("Skills: " + formatSkills(employee));
         io.println("Weekly time off: " + formatWeeklyTimeOff(employee));
         io.println("Approved leaves: " + formatApprovedLeaves(employee));
+    }
+
+    private void changeEmployeePriority() {
+        io.printSection("Change Employee Priority");
+
+        Employee employee = selectEmployee();
+
+        io.println("Current priority: " + employee.getPriority());
+        Priority newPriority = choosePriority();
+
+        managerService.changeEmployeePriority(employee.getName(), newPriority);
+
+        io.println("Priority updated successfully for " + employee.getName());
+    }
+
+    private void deleteEmployee() {
+        io.printSection("Delete Employee");
+
+        Employee employee = selectEmployee();
+        boolean confirmed = io.confirm(
+                "Are you sure you want to permanently delete employee '" + employee.getName() + "'?"
+        );
+
+        if (!confirmed) {
+            io.println("Operation cancelled.");
+            return;
+        }
+
+        managerService.deleteEmployee(employee.getName());
+        io.println("Employee deleted successfully.");
     }
 
     private void addOrUpdateSkillToEmployee() {
@@ -693,7 +728,7 @@ public class ManagerConsoleController {
 
     private void ensureTemplateExists() {
         if (currentTemplate == null) {
-            throw new IllegalStateException("Create or load a weekly template first.");
+            throw new TemplateNotInitializedException();
         }
     }
 

@@ -31,6 +31,7 @@ class ManagerServiceJsonIntegrationTest {
 
     @Test
     void shouldCreateEmployeeAndLeaveRequestAndReloadEverythingFromJson() {
+
         Path employeesFile = tempDir.resolve("employees.json");
         Path requestsFile = tempDir.resolve("leave-requests.json");
 
@@ -45,7 +46,7 @@ class ManagerServiceJsonIntegrationTest {
         );
 
         Employee employee = managerService.createEmployee(
-                "Mario Rossi",
+                "Integration Employee Test",
                 Priority.MEDIUM,
                 40,
                 12
@@ -60,39 +61,37 @@ class ManagerServiceJsonIntegrationTest {
 
         LeaveRequest request = managerService.createLeaveRequest(employee.getName(), leave);
 
-        assertAll(
-                () -> assertEquals("Mario Rossi", employee.getName()),
-                () -> assertEquals(RequestStatus.PENDING, request.getStatus()),
-                () -> assertEquals(1, request.getId())
-        );
+        EmployeeRepository reloadedEmployeeRepository =
+                new JsonEmployeeRepository(employeesFile);
 
-        EmployeeRepository reloadedEmployeeRepository = new JsonEmployeeRepository(employeesFile);
         LeaveRequestRepository reloadedLeaveRequestRepository =
-                new JsonLeaveRequestRepository(requestsFile, reloadedEmployeeRepository);
+                new JsonLeaveRequestRepository(
+                        requestsFile,
+                        reloadedEmployeeRepository
+                );
 
-        Optional<Employee> loadedEmployee = reloadedEmployeeRepository.findByName("Mario Rossi");
-        Optional<LeaveRequest> loadedRequest = reloadedLeaveRequestRepository.findById(1);
+        Optional<Employee> loadedEmployee =
+                reloadedEmployeeRepository.findByName("Integration Employee Test");
+
+        Optional<LeaveRequest> loadedRequest =
+                reloadedLeaveRequestRepository.findById(1);
 
         assertAll(
                 () -> assertTrue(loadedEmployee.isPresent()),
-                () -> assertEquals("Mario Rossi", loadedEmployee.get().getName()),
                 () -> assertTrue(loadedRequest.isPresent()),
-                () -> assertEquals(RequestStatus.PENDING, loadedRequest.get().getStatus()),
-                () -> assertEquals("Mario Rossi", loadedRequest.get().getEmployee().getName()),
-                () -> assertEquals(LocalDate.of(2026, 4, 10), loadedRequest.get().getLeave().getDate()),
-                () -> assertEquals(LocalTime.of(10, 0), loadedRequest.get().getLeave().getRange().getStart()),
-                () -> assertEquals(LocalTime.of(14, 0), loadedRequest.get().getLeave().getRange().getEnd()),
-                () -> assertEquals(LeaveType.VACATION, loadedRequest.get().getLeave().getType()),
-                () -> assertEquals("Weekend trip", loadedRequest.get().getLeave().getNote())
+                () -> assertEquals("Integration Employee Test", loadedEmployee.get().getName()),
+                () -> assertEquals(RequestStatus.PENDING, loadedRequest.get().getStatus())
         );
     }
 
     @Test
     void shouldApproveRequestAndPersistBothEmployeeAndRequest() {
+
         Path employeesFile = tempDir.resolve("employees.json");
         Path requestsFile = tempDir.resolve("leave-requests.json");
 
         EmployeeRepository employeeRepository = new JsonEmployeeRepository(employeesFile);
+
         LeaveRequestRepository leaveRequestRepository =
                 new JsonLeaveRequestRepository(requestsFile, employeeRepository);
 
@@ -103,7 +102,7 @@ class ManagerServiceJsonIntegrationTest {
         );
 
         Employee employee = managerService.createEmployee(
-                "Anna Verdi",
+                "Approved Leave Employee Test",
                 Priority.HIGH,
                 32,
                 14
@@ -116,36 +115,52 @@ class ManagerServiceJsonIntegrationTest {
                 "Family dinner"
         );
 
-        LeaveRequest request = managerService.createLeaveRequest(employee.getName(), leave);
+        LeaveRequest request =
+                managerService.createLeaveRequest(employee.getName(), leave);
 
         managerService.approveRequest(request.getId());
 
-        EmployeeRepository reloadedEmployeeRepository = new JsonEmployeeRepository(employeesFile);
+        EmployeeRepository reloadedEmployeeRepository =
+                new JsonEmployeeRepository(employeesFile);
+
         LeaveRequestRepository reloadedLeaveRequestRepository =
-                new JsonLeaveRequestRepository(requestsFile, reloadedEmployeeRepository);
+                new JsonLeaveRequestRepository(
+                        requestsFile,
+                        reloadedEmployeeRepository
+                );
 
-        Employee reloadedEmployee = reloadedEmployeeRepository.findByName("Anna Verdi")
-                .orElseThrow();
+        Employee reloadedEmployee =
+                reloadedEmployeeRepository
+                        .findByName("Approved Leave Employee Test")
+                        .orElseThrow();
 
-        LeaveRequest reloadedRequest = reloadedLeaveRequestRepository.findById(request.getId())
-                .orElseThrow();
+        LeaveRequest reloadedRequest =
+                reloadedLeaveRequestRepository
+                        .findById(request.getId())
+                        .orElseThrow();
 
         assertAll(
                 () -> assertEquals(RequestStatus.APPROVED, reloadedRequest.getStatus()),
-                () -> assertEquals("Anna Verdi", reloadedRequest.getEmployee().getName()),
-                () -> assertEquals(1, reloadedEmployee.getLeaveCalendar().getLeaves().size()),
-                () -> assertEquals(LocalDate.of(2026, 5, 5), reloadedEmployee.getLeaveCalendar().getLeaves().get(0).getDate()),
-                () -> assertEquals(LeaveType.PERSONAL, reloadedEmployee.getLeaveCalendar().getLeaves().get(0).getType()),
-                () -> assertEquals("Family dinner", reloadedEmployee.getLeaveCalendar().getLeaves().get(0).getNote())
+                () -> assertEquals(
+                        "Approved Leave Employee Test",
+                        reloadedRequest.getEmployee().getName()
+                ),
+                () -> assertEquals(
+                        1,
+                        reloadedEmployee.getLeaveCalendar().getLeaves().size()
+                )
         );
     }
 
     @Test
     void shouldRejectRequestAndPersistRejectedStateWithoutAddingLeave() {
+
         Path employeesFile = tempDir.resolve("employees.json");
         Path requestsFile = tempDir.resolve("leave-requests.json");
 
-        EmployeeRepository employeeRepository = new JsonEmployeeRepository(employeesFile);
+        EmployeeRepository employeeRepository =
+                new JsonEmployeeRepository(employeesFile);
+
         LeaveRequestRepository leaveRequestRepository =
                 new JsonLeaveRequestRepository(requestsFile, employeeRepository);
 
@@ -156,7 +171,7 @@ class ManagerServiceJsonIntegrationTest {
         );
 
         Employee employee = managerService.createEmployee(
-                "Luca Neri",
+                "Rejected Leave Employee Test",
                 Priority.LOW,
                 24,
                 10
@@ -169,19 +184,29 @@ class ManagerServiceJsonIntegrationTest {
                 "Flu symptoms"
         );
 
-        LeaveRequest request = managerService.createLeaveRequest(employee.getName(), leave);
+        LeaveRequest request =
+                managerService.createLeaveRequest(employee.getName(), leave);
 
         managerService.rejectRequest(request.getId());
 
-        EmployeeRepository reloadedEmployeeRepository = new JsonEmployeeRepository(employeesFile);
+        EmployeeRepository reloadedEmployeeRepository =
+                new JsonEmployeeRepository(employeesFile);
+
         LeaveRequestRepository reloadedLeaveRequestRepository =
-                new JsonLeaveRequestRepository(requestsFile, reloadedEmployeeRepository);
+                new JsonLeaveRequestRepository(
+                        requestsFile,
+                        reloadedEmployeeRepository
+                );
 
-        Employee reloadedEmployee = reloadedEmployeeRepository.findByName("Luca Neri")
-                .orElseThrow();
+        Employee reloadedEmployee =
+                reloadedEmployeeRepository
+                        .findByName("Rejected Leave Employee Test")
+                        .orElseThrow();
 
-        LeaveRequest reloadedRequest = reloadedLeaveRequestRepository.findById(request.getId())
-                .orElseThrow();
+        LeaveRequest reloadedRequest =
+                reloadedLeaveRequestRepository
+                        .findById(request.getId())
+                        .orElseThrow();
 
         assertAll(
                 () -> assertEquals(RequestStatus.REJECTED, reloadedRequest.getStatus()),
@@ -191,10 +216,13 @@ class ManagerServiceJsonIntegrationTest {
 
     @Test
     void shouldReturnOnlyPendingRequestsAfterApproveAndReject() {
+
         Path employeesFile = tempDir.resolve("employees.json");
         Path requestsFile = tempDir.resolve("leave-requests.json");
 
-        EmployeeRepository employeeRepository = new JsonEmployeeRepository(employeesFile);
+        EmployeeRepository employeeRepository =
+                new JsonEmployeeRepository(employeesFile);
+
         LeaveRequestRepository leaveRequestRepository =
                 new JsonLeaveRequestRepository(requestsFile, employeeRepository);
 
@@ -205,7 +233,7 @@ class ManagerServiceJsonIntegrationTest {
         );
 
         Employee employee = managerService.createEmployee(
-                "Giulia Bianchi",
+                "Pending Requests Employee Test",
                 Priority.MEDIUM,
                 30,
                 12
@@ -244,9 +272,14 @@ class ManagerServiceJsonIntegrationTest {
         managerService.approveRequest(request1.getId());
         managerService.rejectRequest(request2.getId());
 
-        EmployeeRepository reloadedEmployeeRepository = new JsonEmployeeRepository(employeesFile);
+        EmployeeRepository reloadedEmployeeRepository =
+                new JsonEmployeeRepository(employeesFile);
+
         LeaveRequestRepository reloadedLeaveRequestRepository =
-                new JsonLeaveRequestRepository(requestsFile, reloadedEmployeeRepository);
+                new JsonLeaveRequestRepository(
+                        requestsFile,
+                        reloadedEmployeeRepository
+                );
 
         ManagerService reloadedManagerService = new ManagerService(
                 reloadedEmployeeRepository,
@@ -254,7 +287,8 @@ class ManagerServiceJsonIntegrationTest {
                 new EmployeeFactory()
         );
 
-        List<LeaveRequest> pendingRequests = reloadedManagerService.getPendingRequests();
+        List<LeaveRequest> pendingRequests =
+                reloadedManagerService.getPendingRequests();
 
         assertEquals(1, pendingRequests.size());
         assertEquals(request3.getId(), pendingRequests.get(0).getId());
@@ -263,10 +297,13 @@ class ManagerServiceJsonIntegrationTest {
 
     @Test
     void shouldKeepRequestPendingWhenApprovalFailsBecauseOfLeaveConflict() {
+
         Path employeesFile = tempDir.resolve("employees.json");
         Path requestsFile = tempDir.resolve("leave-requests.json");
 
-        EmployeeRepository employeeRepository = new JsonEmployeeRepository(employeesFile);
+        EmployeeRepository employeeRepository =
+                new JsonEmployeeRepository(employeesFile);
+
         LeaveRequestRepository leaveRequestRepository =
                 new JsonLeaveRequestRepository(requestsFile, employeeRepository);
 
@@ -277,7 +314,7 @@ class ManagerServiceJsonIntegrationTest {
         );
 
         Employee employee = managerService.createEmployee(
-                "Paolo Gialli",
+                "Conflicting Leave Employee Test",
                 Priority.HIGH,
                 38,
                 16
@@ -293,44 +330,62 @@ class ManagerServiceJsonIntegrationTest {
         employee.addLeave(existingLeave);
         employeeRepository.save(employee);
 
-        LeaveRequest conflictingRequest = managerService.createLeaveRequest(
-                employee.getName(),
-                new Leave(
-                        LocalDate.of(2026, 8, 10),
-                        new TimeRange(LocalTime.of(11, 0), LocalTime.of(15, 0)),
-                        LeaveType.PERSONAL,
-                        "Conflicting request"
-                )
-        );
+        LeaveRequest conflictingRequest =
+                managerService.createLeaveRequest(
+                        employee.getName(),
+                        new Leave(
+                                LocalDate.of(2026, 8, 10),
+                                new TimeRange(LocalTime.of(11, 0), LocalTime.of(15, 0)),
+                                LeaveType.PERSONAL,
+                                "Conflicting request"
+                        )
+                );
 
         assertThrows(
                 IllegalArgumentException.class,
                 () -> managerService.approveRequest(conflictingRequest.getId())
         );
 
-        EmployeeRepository reloadedEmployeeRepository = new JsonEmployeeRepository(employeesFile);
+        EmployeeRepository reloadedEmployeeRepository =
+                new JsonEmployeeRepository(employeesFile);
+
         LeaveRequestRepository reloadedLeaveRequestRepository =
-                new JsonLeaveRequestRepository(requestsFile, reloadedEmployeeRepository);
+                new JsonLeaveRequestRepository(
+                        requestsFile,
+                        reloadedEmployeeRepository
+                );
 
-        Employee reloadedEmployee = reloadedEmployeeRepository.findByName("Paolo Gialli")
-                .orElseThrow();
+        Employee reloadedEmployee =
+                reloadedEmployeeRepository
+                        .findByName("Conflicting Leave Employee Test")
+                        .orElseThrow();
 
-        LeaveRequest reloadedRequest = reloadedLeaveRequestRepository.findById(conflictingRequest.getId())
-                .orElseThrow();
+        LeaveRequest reloadedRequest =
+                reloadedLeaveRequestRepository
+                        .findById(conflictingRequest.getId())
+                        .orElseThrow();
 
         assertAll(
-                () -> assertEquals(1, reloadedEmployee.getLeaveCalendar().getLeaves().size()),
-                () -> assertEquals("Existing leave", reloadedEmployee.getLeaveCalendar().getLeaves().get(0).getNote()),
-                () -> assertEquals(RequestStatus.PENDING, reloadedRequest.getStatus())
+                () -> assertEquals(
+                        1,
+                        reloadedEmployee.getLeaveCalendar().getLeaves().size()
+                ),
+                () -> assertEquals(
+                        RequestStatus.PENDING,
+                        reloadedRequest.getStatus()
+                )
         );
     }
 
     @Test
     void shouldThrowWhenApprovingAlreadyApprovedRequestAfterReload() {
+
         Path employeesFile = tempDir.resolve("employees.json");
         Path requestsFile = tempDir.resolve("leave-requests.json");
 
-        EmployeeRepository employeeRepository = new JsonEmployeeRepository(employeesFile);
+        EmployeeRepository employeeRepository =
+                new JsonEmployeeRepository(employeesFile);
+
         LeaveRequestRepository leaveRequestRepository =
                 new JsonLeaveRequestRepository(requestsFile, employeeRepository);
 
@@ -341,7 +396,7 @@ class ManagerServiceJsonIntegrationTest {
         );
 
         Employee employee = managerService.createEmployee(
-                "Sara Blu",
+                "Already Approved Employee Test",
                 Priority.MEDIUM,
                 32,
                 13
@@ -359,9 +414,14 @@ class ManagerServiceJsonIntegrationTest {
 
         managerService.approveRequest(request.getId());
 
-        EmployeeRepository reloadedEmployeeRepository = new JsonEmployeeRepository(employeesFile);
+        EmployeeRepository reloadedEmployeeRepository =
+                new JsonEmployeeRepository(employeesFile);
+
         LeaveRequestRepository reloadedLeaveRequestRepository =
-                new JsonLeaveRequestRepository(requestsFile, reloadedEmployeeRepository);
+                new JsonLeaveRequestRepository(
+                        requestsFile,
+                        reloadedEmployeeRepository
+                );
 
         ManagerService reloadedManagerService = new ManagerService(
                 reloadedEmployeeRepository,

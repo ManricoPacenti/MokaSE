@@ -3,8 +3,6 @@ package it.pacenti.moka.availability;
 import it.pacenti.moka.employee.Employee;
 import it.pacenti.moka.employee.EmployeeFactory;
 import it.pacenti.moka.employee.Priority;
-import it.pacenti.moka.employee.Skill;
-import it.pacenti.moka.employee.Proficiency;
 import it.pacenti.moka.scheduling.TimeRange;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -16,15 +14,15 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class LeaveRequestTest {
 
-    private EmployeeFactory employeeFactory;
     private Employee employee;
     private Leave leave;
 
     @BeforeEach
     void setUp() {
-        employeeFactory = new EmployeeFactory();
+        EmployeeFactory employeeFactory = new EmployeeFactory();
+
         employee = employeeFactory.createEmployee(
-                "Mario Rossi",
+                "Employee On Leave Test",
                 Priority.MEDIUM,
                 40,
                 12
@@ -51,39 +49,39 @@ class LeaveRequestTest {
     }
 
     @Test
-    void shouldThrowWhenIdIsZeroOrNegative() {
-        IllegalArgumentException ex1 = assertThrows(
+    void shouldThrowExceptionWhenIdIsZeroOrNegative() {
+        IllegalArgumentException zeroIdException = assertThrows(
                 IllegalArgumentException.class,
                 () -> new LeaveRequest(0, employee, leave)
         );
 
-        IllegalArgumentException ex2 = assertThrows(
+        IllegalArgumentException negativeIdException = assertThrows(
                 IllegalArgumentException.class,
                 () -> new LeaveRequest(-1, employee, leave)
         );
 
-        assertEquals("Request id must be greater than zero", ex1.getMessage());
-        assertEquals("Request id must be greater than zero", ex2.getMessage());
+        assertEquals("Request id must be greater than zero", zeroIdException.getMessage());
+        assertEquals("Request id must be greater than zero", negativeIdException.getMessage());
     }
 
     @Test
-    void shouldThrowWhenEmployeeIsNull() {
-        NullPointerException ex = assertThrows(
+    void shouldThrowExceptionWhenEmployeeIsNull() {
+        NullPointerException exception = assertThrows(
                 NullPointerException.class,
                 () -> new LeaveRequest(1, null, leave)
         );
 
-        assertEquals("Employee cannot be null", ex.getMessage());
+        assertEquals("Employee cannot be null", exception.getMessage());
     }
 
     @Test
-    void shouldThrowWhenLeaveIsNull() {
-        NullPointerException ex = assertThrows(
+    void shouldThrowExceptionWhenLeaveIsNull() {
+        NullPointerException exception = assertThrows(
                 NullPointerException.class,
                 () -> new LeaveRequest(1, employee, null)
         );
 
-        assertEquals("Leave cannot be null", ex.getMessage());
+        assertEquals("Leave cannot be null", exception.getMessage());
     }
 
     @Test
@@ -109,12 +107,12 @@ class LeaveRequestTest {
         LeaveRequest request = new LeaveRequest(1, employee, leave);
         request.approve();
 
-        IllegalStateException ex = assertThrows(
+        IllegalStateException exception = assertThrows(
                 IllegalStateException.class,
                 request::approve
         );
 
-        assertEquals("Only pending requests can change status", ex.getMessage());
+        assertEquals("Only pending requests can change status", exception.getMessage());
     }
 
     @Test
@@ -122,12 +120,12 @@ class LeaveRequestTest {
         LeaveRequest request = new LeaveRequest(1, employee, leave);
         request.approve();
 
-        IllegalStateException ex = assertThrows(
+        IllegalStateException exception = assertThrows(
                 IllegalStateException.class,
                 request::reject
         );
 
-        assertEquals("Only pending requests can change status", ex.getMessage());
+        assertEquals("Only pending requests can change status", exception.getMessage());
     }
 
     @Test
@@ -135,12 +133,12 @@ class LeaveRequestTest {
         LeaveRequest request = new LeaveRequest(1, employee, leave);
         request.reject();
 
-        IllegalStateException ex = assertThrows(
+        IllegalStateException exception = assertThrows(
                 IllegalStateException.class,
                 request::reject
         );
 
-        assertEquals("Only pending requests can change status", ex.getMessage());
+        assertEquals("Only pending requests can change status", exception.getMessage());
     }
 
     @Test
@@ -148,11 +146,11 @@ class LeaveRequestTest {
         LeaveRequest request = new LeaveRequest(1, employee, leave);
         request.reject();
 
-        IllegalStateException ex = assertThrows(
+        IllegalStateException exception = assertThrows(
                 IllegalStateException.class,
                 request::approve
         );
 
-        assertEquals("Only pending requests can change status", ex.getMessage());
+        assertEquals("Only pending requests can change status", exception.getMessage());
     }
 }

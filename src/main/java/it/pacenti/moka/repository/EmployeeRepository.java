@@ -6,7 +6,7 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * This interface defines the contract for storing and retrieving employee
+ * Contract for storing and retrieving employees.
  */
 public interface EmployeeRepository {
 
@@ -17,6 +17,6 @@ public interface EmployeeRepository {
     boolean existsByName(String name);
 
     List<Employee> findAll();
+
+    void deleteByName(String name);
 }
-
-

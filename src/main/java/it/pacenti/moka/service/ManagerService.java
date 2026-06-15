@@ -30,6 +30,7 @@ import java.util.logging.Logger;
  *
  * This class orchestrates:
  * - employee creation and retrieval
+ * - employee updates through explicit use cases
  * - leave request submission
  * - leave request approval / rejection
  * - employee enrichment (skills / weekly unavailability)
@@ -111,6 +112,10 @@ public class ManagerService {
         return employeeRepository.findByName(normalizeName(name));
     }
 
+    public Employee getEmployeeByName(String name) {
+        return getRequiredEmployee(name);
+    }
+
     public List<Employee> getAllEmployees() {
         return List.copyOf(employeeRepository.findAll());
     }
@@ -121,12 +126,44 @@ public class ManagerService {
         Objects.requireNonNull(proficiency, "Proficiency cannot be null");
 
         Employee employee = getRequiredEmployee(employeeName);
-        employee.getSkills().addOrUpdate(skill, proficiency);
+        employee.addOrUpdateSkill(skill, proficiency);
         employeeRepository.save(employee);
 
         LOGGER.info("Added/updated skill " + skill
                 + " with proficiency " + proficiency
                 + " for employee " + employee.getName());
+    }
+
+    public void removeSkillFromEmployee(String employeeName, Skill skill) {
+        Objects.requireNonNull(employeeName, "Employee name cannot be null");
+        Objects.requireNonNull(skill, "Skill cannot be null");
+
+        Employee employee = getRequiredEmployee(employeeName);
+        employee.removeSkill(skill);
+        employeeRepository.save(employee);
+
+        LOGGER.info("Removed skill " + skill + " from employee " + employee.getName());
+    }
+
+    public void changeEmployeePriority(String employeeName, Priority newPriority) {
+        Objects.requireNonNull(employeeName, "Employee name cannot be null");
+        Objects.requireNonNull(newPriority, "Priority cannot be null");
+
+        Employee employee = getRequiredEmployee(employeeName);
+        employee.changePriority(newPriority);
+        employeeRepository.save(employee);
+
+        LOGGER.info("Changed priority for employee " + employee.getName()
+                + " to " + newPriority);
+    }
+
+    public void deleteEmployee(String employeeName) {
+        Objects.requireNonNull(employeeName, "Employee name cannot be null");
+
+        Employee employee = getRequiredEmployee(employeeName);
+        employeeRepository.deleteByName(employee.getName());
+
+        LOGGER.info("Deleted employee: " + employee.getName());
     }
 
     public void addWeeklyTimeOff(String employeeName, DayOfWeek day, TimeRange range) {
@@ -245,49 +282,5 @@ public class ManagerService {
         }
 
         return normalized.toLowerCase();
-    }
-
-    public Optional<Employee> findEmployeeByName(String name) {
-        return findEmployee(name);
-    }
-
-    public Employee getEmployeeByName(String name) {
-        return findEmployee(name)
-                .orElseThrow(() -> new EmployeeNotFoundException(normalizeName(name)));
-    }
-
-    public LeaveRequest submitLeaveRequest(String employeeName, Leave leave) {
-        return createLeaveRequest(employeeName, leave);
-    }
-
-    public LeaveRequest submitLeaveRequest(Employee employee, Leave leave) {
-        Objects.requireNonNull(employee, "Employee cannot be null");
-        return createLeaveRequest(employee.getName(), leave);
-    }
-
-    public void approveLeaveRequest(int requestId) {
-        approveRequest(requestId);
-    }
-
-    public void rejectLeaveRequest(int requestId) {
-        rejectRequest(requestId);
-    }
-
-    public void saveEmployee(Employee employee) {
-        Objects.requireNonNull(employee, "Employee cannot be null");
-        employeeRepository.save(employee);
-    }
-
-    public void removeSkillFromEmployee(String employeeName, Skill skill) {
-        Objects.requireNonNull(employeeName, "Employee name cannot be null");
-        Objects.requireNonNull(skill, "Skill cannot be null");
-
-        Employee employee = employeeRepository.findByName(employeeName)
-                .orElseThrow(() -> new IllegalArgumentException(
-                        "Employee not found: " + employeeName
-                ));
-
-        employee.removeSkill(skill);
-        employeeRepository.save(employee);
     }
 }

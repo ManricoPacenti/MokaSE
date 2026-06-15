@@ -27,10 +27,6 @@ public class EmployeeData {
         this.approvedLeaves = new ArrayList<>();
     }
 
-    // ======================
-    // BASIC FIELDS
-    // ======================
-
     public String getName() {
         return name;
     }
@@ -63,10 +59,6 @@ public class EmployeeData {
         this.hourlyCost = hourlyCost;
     }
 
-    // ======================
-    // SKILLS
-    // ======================
-
     public List<EmployeeSkillData> getSkills() {
         return skills;
     }
@@ -74,10 +66,6 @@ public class EmployeeData {
     public void setSkills(List<EmployeeSkillData> skills) {
         this.skills = (skills != null) ? skills : new ArrayList<>();
     }
-
-    // ======================
-    // WEEKLY TIME OFF
-    // ======================
 
     public Map<String, List<TimeRangeData>> getWeeklyTimeOff() {
         return weeklyTimeOff;
@@ -87,9 +75,6 @@ public class EmployeeData {
         this.weeklyTimeOff = (weeklyTimeOff != null) ? weeklyTimeOff : new LinkedHashMap<>();
     }
 
-    // ======================
-    // FULL DAYS OFF (FIX)
-    // ======================
 
     public List<String> getFullDaysOff() {
         return fullDaysOff;
@@ -99,9 +84,6 @@ public class EmployeeData {
         this.fullDaysOff = (fullDaysOff != null) ? fullDaysOff : new ArrayList<>();
     }
 
-    // ======================
-    // APPROVED LEAVES
-    // ======================
 
     public List<LeaveData> getApprovedLeaves() {
         return approvedLeaves;

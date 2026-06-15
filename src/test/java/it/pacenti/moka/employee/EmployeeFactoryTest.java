@@ -8,24 +8,20 @@ class EmployeeFactoryTest {
 
     @Test
     void shouldCreateEmployeeWhenInputIsValid() {
-        //Arrange
         EmployeeFactory factory = new EmployeeFactory();
 
-        //Act
         Employee employee = factory.createEmployee(
-                "Mario",
+                "Employee Test",
                 Priority.MEDIUM,
                 40,
                 12
         );
 
-        //Assert
         assertNotNull(employee);
-        assertEquals("Mario", employee.getName());
+        assertEquals("Employee Test", employee.getName());
         assertEquals(Priority.MEDIUM, employee.getPriority());
         assertEquals(40, employee.getAgreedHours());
         assertEquals(12, employee.getHourlyCost());
-
         assertNotNull(employee.getSkills());
         assertNotNull(employee.getAvailability());
         assertNotNull(employee.getLeaveCalendar());
@@ -33,27 +29,22 @@ class EmployeeFactoryTest {
 
     @Test
     void shouldTrimNameWhenCreatingEmployee() {
-        //Arrange
         EmployeeFactory factory = new EmployeeFactory();
 
-        //Act
         Employee employee = factory.createEmployee(
-                "  Mario  ",
+                "  Employee Test  ",
                 Priority.MEDIUM,
                 40,
                 12
         );
 
-        //Assert
-        assertEquals("Mario", employee.getName());
+        assertEquals("Employee Test", employee.getName());
     }
 
     @Test
-    void shouldThreowExceptionWhenNameIsNull() {
-        //Arrange
+    void shouldThrowExceptionWhenNameIsNull() {
         EmployeeFactory factory = new EmployeeFactory();
 
-        //Act+ Assert
         assertThrows(NullPointerException.class, () ->
                 factory.createEmployee(
                         null,
@@ -65,14 +56,12 @@ class EmployeeFactoryTest {
     }
 
     @Test
-    void shouldThrowExceprionWhenPriorityIsNull() {
-        //Arrange
+    void shouldThrowExceptionWhenPriorityIsNull() {
         EmployeeFactory factory = new EmployeeFactory();
 
-        //Act+Assert
         assertThrows(NullPointerException.class, () ->
                 factory.createEmployee(
-                        "Mario",
+                        "Employee Test",
                         null,
                         40,
                         12
@@ -81,11 +70,9 @@ class EmployeeFactoryTest {
     }
 
     @Test
-    void shouldThrowExceprionWhenNameIsBlank() {
-        //Arrange
+    void shouldThrowExceptionWhenNameIsBlank() {
         EmployeeFactory factory = new EmployeeFactory();
 
-        //Act+ Assert
         assertThrows(IllegalArgumentException.class, () ->
                 factory.createEmployee(
                         " ",
@@ -98,13 +85,11 @@ class EmployeeFactoryTest {
 
     @Test
     void shouldThrowExceptionWhenAgreedHoursIsNegative() {
-        // Arrange
         EmployeeFactory factory = new EmployeeFactory();
 
-        // Act + Assert
         assertThrows(IllegalArgumentException.class, () ->
                 factory.createEmployee(
-                        "Mario",
+                        "Employee Test",
                         Priority.MEDIUM,
                         -1,
                         12
@@ -114,13 +99,11 @@ class EmployeeFactoryTest {
 
     @Test
     void shouldThrowExceptionWhenHourlyCostIsNegative() {
-        // Arrange
         EmployeeFactory factory = new EmployeeFactory();
 
-        // Act + Assert
         assertThrows(IllegalArgumentException.class, () ->
                 factory.createEmployee(
-                        "Mario",
+                        "Employee Test",
                         Priority.MEDIUM,
                         40,
                         -1
@@ -128,4 +111,3 @@ class EmployeeFactoryTest {
         );
     }
 }
-

@@ -11,7 +11,9 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 /**
- * Shift scheduler with phased assignment and protected rebalance.
+ * Generates a weekly schedule using a multi-phase assignment strategy.
+ * The scheduler prioritizes critical roles, attempts to complete agreed hours
+ * for high-priority employees and performs rebalancing.
  *
  * Strategy:
  * 1) Assign RESP first
@@ -19,22 +21,16 @@ import java.util.stream.Collectors;
  * 3) First protective rebalance for critical HIGH employees
  * 4) Assign remaining standard slots
  * 5) Final rebalance for HIGH employees still under agreed hours
- *
- * Goal:
- * - preserve strategic employees (especially RESP HIGH)
- * - complete hours for critical employees before filling everything else
- * - avoid late rebalances that damage important assignments
  */
 public class ShiftScheduler {
 
-    public static boolean DEBUG = true;
+    public static boolean DEBUG = false;
 
     private static final long MAX_DAILY_MINUTES = 8 * 60;
 
     private static final int SCORE_ROLE_HIGH = 420;
     private static final int SCORE_ROLE_MID = 280;
     private static final int SCORE_ROLE_LOW = 140;
-    private static final int SCORE_ROLE_FALLBACK = 85;
 
     private static final int SCORE_PRIORITY_HIGH = 36;
     private static final int SCORE_PRIORITY_MEDIUM = 24;
@@ -48,9 +44,7 @@ public class ShiftScheduler {
     private static final int PENALTY_PROTECT_CRITICAL = -20;
     private static final int PENALTY_RESP_USED_OUTSIDE_ROLE = -10;
 
-    /**
-     * Entry point.
-     */
+
     public WeeklySchedule generateSchedule(WeeklyScheduleTemplate template, List<Employee> employees) {
         Objects.requireNonNull(template, "Template cannot be null");
         Objects.requireNonNull(employees, "Employees cannot be null");
@@ -75,9 +69,6 @@ public class ShiftScheduler {
         return schedule;
     }
 
-    // ============================================================
-    // PHASE 1 - RESP
-    // ============================================================
 
     private void assignRespPhase(WeeklySchedule schedule, List<Employee> employees) {
         List<ShiftSlot> respSlots = schedule.getUnassignedSlots().stream()
@@ -90,9 +81,6 @@ public class ShiftScheduler {
         }
     }
 
-    // ============================================================
-    // PHASE 2 - CRITICAL HIGH
-    // ============================================================
 
     private void assignCriticalHighPhase(WeeklySchedule schedule, List<Employee> employees) {
         List<Employee> criticalHighEmployees = employees.stream()
@@ -109,9 +97,6 @@ public class ShiftScheduler {
         }
     }
 
-    // ============================================================
-    // PHASE 3 - PROTECTIVE REBALANCE
-    // ============================================================
 
     private void rebalanceCriticalHighPhase(WeeklySchedule schedule, List<Employee> employees) {
         List<Employee> targets = employees.stream()
@@ -130,9 +115,6 @@ public class ShiftScheduler {
         }
     }
 
-    // ============================================================
-    // PHASE 4 - STANDARD
-    // ============================================================
 
     private void assignStandardPhase(WeeklySchedule schedule, List<Employee> employees) {
         List<ShiftSlot> remaining = schedule.getUnassignedSlots().stream()
@@ -144,9 +126,6 @@ public class ShiftScheduler {
         }
     }
 
-    // ============================================================
-    // PHASE 5 - FINAL HIGH REBALANCE
-    // ============================================================
 
     private void rebalanceResidualHighPhase(WeeklySchedule schedule, List<Employee> employees) {
         List<Employee> targets = employees.stream()
@@ -167,9 +146,6 @@ public class ShiftScheduler {
         }
     }
 
-    // ============================================================
-    // CORE ASSIGNMENT
-    // ============================================================
 
     private void assignBestCandidate(WeeklySchedule schedule,
                                      List<Employee> employees,
@@ -255,9 +231,6 @@ public class ShiftScheduler {
         );
     }
 
-    // ============================================================
-    // TAKEOVER / REBALANCE
-    // ============================================================
 
     private boolean attemptTakeover(WeeklySchedule schedule,
                                     Employee target,
@@ -338,9 +311,6 @@ public class ShiftScheduler {
         return true;
     }
 
-    // ============================================================
-    // ASSIGNMENT HELPERS
-    // ============================================================
 
     private void assign(WeeklySchedule schedule, ShiftSlot slot, Employee employee) {
         schedule.assign(slot, employee);
@@ -369,9 +339,6 @@ public class ShiftScheduler {
         }
     }
 
-    // ============================================================
-    // SCORING
-    // ============================================================
 
     private int scoreRole(Employee employee, Skill requiredSkill, AssignmentPhase phase) {
         if (!employee.hasSkill(requiredSkill)) {
@@ -506,10 +473,6 @@ public class ShiftScheduler {
         };
     }
 
-    // ============================================================
-    // BUSINESS RULES
-    // ============================================================
-
     private boolean canAssign(WeeklySchedule schedule, Employee employee, ShiftSlot slot) {
         LocalDate date = schedule.getDateFor(slot);
 
@@ -557,9 +520,6 @@ public class ShiftScheduler {
         return Math.max(0, getAgreedMinutes(employee) - schedule.getAssignedMinutes(employee));
     }
 
-    // ============================================================
-    // SORTING
-    // ============================================================
 
     private Comparator<ShiftSlot> respSlotComparator() {
         return Comparator
@@ -622,10 +582,6 @@ public class ShiftScheduler {
             case RESP -> 99;
         };
     }
-
-    // ============================================================
-    // DEBUG
-    // ============================================================
 
     private void debugHeader(String title) {
         if (!DEBUG) {
@@ -708,10 +664,6 @@ public class ShiftScheduler {
         long rem = minutes % 60;
         return String.format(Locale.US, "%d,%01dh", hours, rem == 0 ? 0 : 5);
     }
-
-    // ============================================================
-    // INTERNAL TYPES
-    // ============================================================
 
     private enum AssignmentPhase {
         RESP,

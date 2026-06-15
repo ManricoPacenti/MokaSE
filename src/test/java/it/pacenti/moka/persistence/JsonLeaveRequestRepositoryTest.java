@@ -9,6 +9,7 @@ import it.pacenti.moka.employee.EmployeeFactory;
 import it.pacenti.moka.employee.Priority;
 import it.pacenti.moka.persistence.json.JsonEmployeeRepository;
 import it.pacenti.moka.persistence.json.JsonLeaveRequestRepository;
+import it.pacenti.moka.persistence.json.JsonPersistenceException;
 import it.pacenti.moka.repository.EmployeeRepository;
 import it.pacenti.moka.repository.LeaveRequestRepository;
 import it.pacenti.moka.scheduling.TimeRange;
@@ -34,11 +35,12 @@ class JsonLeaveRequestRepositoryTest {
         Path requestsFile = tempDir.resolve("leave-requests.json");
 
         EmployeeRepository employeeRepository = new JsonEmployeeRepository(employeesFile);
-        LeaveRequestRepository requestRepository = new JsonLeaveRequestRepository(requestsFile, employeeRepository);
+        LeaveRequestRepository requestRepository =
+                new JsonLeaveRequestRepository(requestsFile, employeeRepository);
 
         EmployeeFactory factory = new EmployeeFactory();
         Employee employee = factory.createEmployee(
-                "Luca Rossi",
+                "Leave Request Employee Test",
                 Priority.HIGH,
                 40,
                 14
@@ -54,7 +56,6 @@ class JsonLeaveRequestRepositoryTest {
         );
 
         LeaveRequest request = new LeaveRequest(1, employee, leave);
-
         requestRepository.save(request);
 
         LeaveRequestRepository reloadedRepository =
@@ -67,7 +68,7 @@ class JsonLeaveRequestRepositoryTest {
         LeaveRequest loaded = loadedOptional.get();
 
         assertEquals(1, loaded.getId());
-        assertEquals("Luca Rossi", loaded.getEmployee().getName());
+        assertEquals("Leave Request Employee Test", loaded.getEmployee().getName());
         assertEquals(RequestStatus.PENDING, loaded.getStatus());
         assertEquals(LocalDate.of(2026, 4, 2), loaded.getLeave().getDate());
         assertEquals(LocalTime.of(18, 0), loaded.getLeave().getRange().getStart());
@@ -82,11 +83,12 @@ class JsonLeaveRequestRepositoryTest {
         Path requestsFile = tempDir.resolve("leave-requests.json");
 
         EmployeeRepository employeeRepository = new JsonEmployeeRepository(employeesFile);
-        LeaveRequestRepository requestRepository = new JsonLeaveRequestRepository(requestsFile, employeeRepository);
+        LeaveRequestRepository requestRepository =
+                new JsonLeaveRequestRepository(requestsFile, employeeRepository);
 
         EmployeeFactory factory = new EmployeeFactory();
         Employee employee = factory.createEmployee(
-                "Giulia Bianchi",
+                "Leave Update Employee Test",
                 Priority.MEDIUM,
                 30,
                 12
@@ -144,21 +146,27 @@ class JsonLeaveRequestRepositoryTest {
         Path requestsFile = tempDir.resolve("leave-requests.json");
 
         EmployeeRepository employeeRepository = new JsonEmployeeRepository(employeesFile);
-        LeaveRequestRepository requestRepository = new JsonLeaveRequestRepository(requestsFile, employeeRepository);
+        LeaveRequestRepository requestRepository =
+                new JsonLeaveRequestRepository(requestsFile, employeeRepository);
 
         EmployeeFactory factory = new EmployeeFactory();
 
-        Employee mario = factory.createEmployee("Mario Rossi", Priority.HIGH, 40, 15);
-        Employee anna = factory.createEmployee("Anna Verdi", Priority.MEDIUM, 24, 11);
-        Employee luca = factory.createEmployee("Luca Neri", Priority.LOW, 20, 10);
+        Employee pendingEmployee =
+                factory.createEmployee("Pending Leave Employee Test", Priority.HIGH, 40, 15);
 
-        employeeRepository.save(mario);
-        employeeRepository.save(anna);
-        employeeRepository.save(luca);
+        Employee approvedEmployee =
+                factory.createEmployee("Approved Leave Employee Test", Priority.MEDIUM, 24, 11);
+
+        Employee rejectedEmployee =
+                factory.createEmployee("Rejected Leave Employee Test", Priority.LOW, 20, 10);
+
+        employeeRepository.save(pendingEmployee);
+        employeeRepository.save(approvedEmployee);
+        employeeRepository.save(rejectedEmployee);
 
         LeaveRequest pendingRequest = new LeaveRequest(
                 1,
-                mario,
+                pendingEmployee,
                 new Leave(
                         LocalDate.of(2026, 4, 5),
                         new TimeRange(LocalTime.of(12, 0), LocalTime.of(15, 0)),
@@ -169,7 +177,7 @@ class JsonLeaveRequestRepositoryTest {
 
         LeaveRequest approvedRequest = LeaveRequest.reconstitute(
                 2,
-                anna,
+                approvedEmployee,
                 new Leave(
                         LocalDate.of(2026, 4, 6),
                         new TimeRange(LocalTime.of(18, 0), LocalTime.of(23, 0)),
@@ -181,7 +189,7 @@ class JsonLeaveRequestRepositoryTest {
 
         LeaveRequest rejectedRequest = LeaveRequest.reconstitute(
                 3,
-                luca,
+                rejectedEmployee,
                 new Leave(
                         LocalDate.of(2026, 4, 7),
                         new TimeRange(LocalTime.of(18, 0), LocalTime.of(23, 0)),
@@ -203,7 +211,7 @@ class JsonLeaveRequestRepositoryTest {
         assertEquals(1, pending.size());
         assertEquals(1, pending.get(0).getId());
         assertEquals(RequestStatus.PENDING, pending.get(0).getStatus());
-        assertEquals("Mario Rossi", pending.get(0).getEmployee().getName());
+        assertEquals("Pending Leave Employee Test", pending.get(0).getEmployee().getName());
     }
 
     @Test
@@ -212,11 +220,12 @@ class JsonLeaveRequestRepositoryTest {
         Path requestsFile = tempDir.resolve("leave-requests.json");
 
         EmployeeRepository employeeRepository = new JsonEmployeeRepository(employeesFile);
-        LeaveRequestRepository requestRepository = new JsonLeaveRequestRepository(requestsFile, employeeRepository);
+        LeaveRequestRepository requestRepository =
+                new JsonLeaveRequestRepository(requestsFile, employeeRepository);
 
         EmployeeFactory factory = new EmployeeFactory();
         Employee employee = factory.createEmployee(
-                "Sara Blu",
+                "Next Id Employee Test",
                 Priority.MEDIUM,
                 32,
                 13
@@ -262,11 +271,12 @@ class JsonLeaveRequestRepositoryTest {
         Path requestsFile = tempDir.resolve("leave-requests.json");
 
         EmployeeRepository employeeRepository = new JsonEmployeeRepository(employeesFile);
-        LeaveRequestRepository requestRepository = new JsonLeaveRequestRepository(requestsFile, employeeRepository);
+        LeaveRequestRepository requestRepository =
+                new JsonLeaveRequestRepository(requestsFile, employeeRepository);
 
         EmployeeFactory factory = new EmployeeFactory();
         Employee employee = factory.createEmployee(
-                "Paolo Gialli",
+                "Broken Reference Employee Test",
                 Priority.HIGH,
                 38,
                 16
@@ -287,12 +297,12 @@ class JsonLeaveRequestRepositoryTest {
 
         requestRepository.save(request);
 
-        // ricreiamo repository employee su file vuoto differente, simulando dipendenza incoerente
         Path otherEmployeesFile = tempDir.resolve("other-employees.json");
-        EmployeeRepository emptyEmployeeRepository = new JsonEmployeeRepository(otherEmployeesFile);
+        EmployeeRepository emptyEmployeeRepository =
+                new JsonEmployeeRepository(otherEmployeesFile);
 
         assertThrows(
-                RuntimeException.class,
+                JsonPersistenceException.class,
                 () -> new JsonLeaveRequestRepository(requestsFile, emptyEmployeeRepository)
         );
     }

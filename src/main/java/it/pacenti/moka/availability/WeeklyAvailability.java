@@ -83,7 +83,13 @@ public class WeeklyAvailability {
     }
 
     public Map<DayOfWeek, List<TimeRange>> getTimeOff() {
-        return Collections.unmodifiableMap(timeOff);
+        Map<DayOfWeek, List<TimeRange>> copy = new EnumMap<>(DayOfWeek.class);
+
+        for (Map.Entry<DayOfWeek, List<TimeRange>> entry : timeOff.entrySet()) {
+            copy.put(entry.getKey(), Collections.unmodifiableList(entry.getValue()));
+        }
+
+        return Collections.unmodifiableMap(copy);
     }
 
     public Set<DayOfWeek> getFullDaysOff() {

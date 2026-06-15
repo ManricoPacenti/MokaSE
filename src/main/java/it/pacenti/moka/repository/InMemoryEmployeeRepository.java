@@ -1,13 +1,17 @@
 package it.pacenti.moka.repository;
 
-import  it.pacenti.moka.employee.Employee;
+import it.pacenti.moka.employee.Employee;
 
-import java.util.*;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
 
 /**
- * This repository stores employees in a map using a normalized
- * version of the employee name as key
-  */
+ * Repository that stores employees in memory using a normalized
+ * version of the employee name as key.
+ */
 public class InMemoryEmployeeRepository implements EmployeeRepository {
 
     private final Map<String, Employee> employeesByName;
@@ -45,18 +49,27 @@ public class InMemoryEmployeeRepository implements EmployeeRepository {
         return List.copyOf(employeesByName.values());
     }
 
+    @Override
+    public void deleteByName(String name) {
+        Objects.requireNonNull(name, "Name cannot be null");
+
+        String normalizedName = normalizeName(name);
+        employeesByName.remove(normalizedName);
+    }
+
     /**
-     * Normalization currently trims leading/trailing spaces
-     * and converts to lowercase
+     * Normalization trims leading/trailing spaces
+     * and converts the name to lowercase.
      */
     private String normalizeName(String name) {
         Objects.requireNonNull(name, "Name cannot be null");
 
         String normalized = name.trim().toLowerCase();
 
-        if(normalized.isBlank()) {
+        if (normalized.isBlank()) {
             throw new IllegalArgumentException("Name cannot be blank");
         }
+
         return normalized;
     }
 }

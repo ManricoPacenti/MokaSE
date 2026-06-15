@@ -33,7 +33,7 @@ class JsonEmployeeRepositoryTest {
         EmployeeFactory employeeFactory = new EmployeeFactory();
 
         Employee employee = employeeFactory.createEmployee(
-                "Luca Rossi",
+                "Kitchen Employee Test",
                 Priority.HIGH,
                 40,
                 14
@@ -46,6 +46,7 @@ class JsonEmployeeRepositoryTest {
                 LocalTime.of(12, 0),
                 LocalTime.of(15, 0)
         );
+
         employee.getAvailability().addTimeOff(DayOfWeek.MONDAY, mondayLunchOff);
 
         Leave leave = new Leave(
@@ -54,19 +55,20 @@ class JsonEmployeeRepositoryTest {
                 LeaveType.VACATION,
                 "Family trip"
         );
-        employee.addLeave(leave);
 
+        employee.addLeave(leave);
         repository.save(employee);
 
         JsonEmployeeRepository reloadedRepository = new JsonEmployeeRepository(filePath);
 
-        Optional<Employee> loadedOptional = reloadedRepository.findByName("Luca Rossi");
+        Optional<Employee> loadedOptional =
+                reloadedRepository.findByName("Kitchen Employee Test");
 
         assertTrue(loadedOptional.isPresent(), "Employee should be found after reload");
 
         Employee loaded = loadedOptional.get();
 
-        assertEquals("Luca Rossi", loaded.getName());
+        assertEquals("Kitchen Employee Test", loaded.getName());
         assertEquals(Priority.HIGH, loaded.getPriority());
         assertEquals(40, loaded.getAgreedHours());
         assertEquals(14, loaded.getHourlyCost());

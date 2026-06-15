@@ -16,119 +16,95 @@ class InMemoryEmployeeRepositoryTest {
 
     @Test
     void shouldSaveAndFindEmployeeByName() {
-        // Arrange
         InMemoryEmployeeRepository repository = new InMemoryEmployeeRepository();
-        Employee employee = factory.createEmployee("Mario", Priority.MEDIUM, 40, 12);
+        Employee employee = factory.createEmployee("Barista Test", Priority.MEDIUM, 40, 12);
 
-        // Act
         repository.save(employee);
-        Optional<Employee> result = repository.findByName("Mario");
+        Optional<Employee> result = repository.findByName("Barista Test");
 
-        // Assert
         assertTrue(result.isPresent());
-        assertEquals("Mario", result.get().getName());
+        assertEquals("Barista Test", result.get().getName());
     }
 
     @Test
     void shouldFindEmployeeIgnoringCaseAndSpaces() {
-        // Arrange
         InMemoryEmployeeRepository repository = new InMemoryEmployeeRepository();
-        Employee employee = factory.createEmployee("Mario", Priority.MEDIUM, 40, 12);
+        Employee employee = factory.createEmployee("Barista Test", Priority.MEDIUM, 40, 12);
         repository.save(employee);
 
-        // Act
-        Optional<Employee> result = repository.findByName("   mArIo   ");
+        Optional<Employee> result = repository.findByName("   bArIsTa TeSt   ");
 
-        // Assert
         assertTrue(result.isPresent());
-        assertEquals("Mario", result.get().getName());
+        assertEquals("Barista Test", result.get().getName());
     }
 
     @Test
     void shouldReturnEmptyWhenEmployeeDoesNotExist() {
-        // Arrange
         InMemoryEmployeeRepository repository = new InMemoryEmployeeRepository();
 
-        // Act
-        Optional<Employee> result = repository.findByName("Luigi");
+        Optional<Employee> result = repository.findByName("Missing Employee Test");
 
-        // Assert
         assertTrue(result.isEmpty());
     }
 
     @Test
     void shouldReturnTrueWhenEmployeeExistsByName() {
-        // Arrange
         InMemoryEmployeeRepository repository = new InMemoryEmployeeRepository();
-        Employee employee = factory.createEmployee("Mario", Priority.MEDIUM, 40, 12);
+        Employee employee = factory.createEmployee("Barista Test", Priority.MEDIUM, 40, 12);
         repository.save(employee);
 
-        // Act
-        boolean exists = repository.existsByName("mario");
+        boolean exists = repository.existsByName("barista test");
 
-        // Assert
         assertTrue(exists);
     }
 
     @Test
     void shouldReturnFalseWhenEmployeeDoesNotExistByName() {
-        // Arrange
         InMemoryEmployeeRepository repository = new InMemoryEmployeeRepository();
 
-        // Act
-        boolean exists = repository.existsByName("mario");
+        boolean exists = repository.existsByName("missing employee test");
 
-        // Assert
         assertFalse(exists);
     }
 
     @Test
     void shouldReturnAllSavedEmployees() {
-        // Arrange
         InMemoryEmployeeRepository repository = new InMemoryEmployeeRepository();
-        Employee e1 = factory.createEmployee("Mario", Priority.MEDIUM, 40, 12);
-        Employee e2 = factory.createEmployee("Luigi", Priority.HIGH, 30, 15);
+        Employee firstEmployee = factory.createEmployee("Barista Test", Priority.MEDIUM, 40, 12);
+        Employee secondEmployee = factory.createEmployee("Responsabile Test", Priority.HIGH, 30, 15);
 
-        repository.save(e1);
-        repository.save(e2);
+        repository.save(firstEmployee);
+        repository.save(secondEmployee);
 
-        // Act
         List<Employee> employees = repository.findAll();
 
-        // Assert
         assertEquals(2, employees.size());
-        assertTrue(employees.contains(e1));
-        assertTrue(employees.contains(e2));
+        assertTrue(employees.contains(firstEmployee));
+        assertTrue(employees.contains(secondEmployee));
     }
 
     @Test
     void shouldReturnUnmodifiableListFromFindAll() {
-        // Arrange
         InMemoryEmployeeRepository repository = new InMemoryEmployeeRepository();
-        Employee employee = factory.createEmployee("Mario", Priority.MEDIUM, 40, 12);
+        Employee employee = factory.createEmployee("Barista Test", Priority.MEDIUM, 40, 12);
         repository.save(employee);
 
-        // Act
         List<Employee> employees = repository.findAll();
 
-        // Assert
         assertThrows(UnsupportedOperationException.class, () -> employees.add(employee));
     }
 
     @Test
     void shouldOverwriteEmployeeWhenSavingSameNormalizedName() {
-        // Arrange
         InMemoryEmployeeRepository repository = new InMemoryEmployeeRepository();
-        Employee first = factory.createEmployee("Mario", Priority.MEDIUM, 40, 12);
-        Employee second = factory.createEmployee("  mario  ", Priority.HIGH, 20, 18);
+        Employee firstEmployee = factory.createEmployee("Barista Test", Priority.MEDIUM, 40, 12);
+        Employee secondEmployee = factory.createEmployee("  barista test  ", Priority.HIGH, 20, 18);
 
-        // Act
-        repository.save(first);
-        repository.save(second);
+        repository.save(firstEmployee);
+        repository.save(secondEmployee);
 
-        Optional<Employee> result = repository.findByName("MARIO");
+        Optional<Employee> result = repository.findByName("BARISTA TEST");
 
-        // Assert
         assertTrue(result.isPresent());
         assertEquals(Priority.HIGH, result.get().getPriority());
         assertEquals(20, result.get().getAgreedHours());
@@ -138,46 +114,36 @@ class InMemoryEmployeeRepositoryTest {
 
     @Test
     void shouldThrowExceptionWhenSavingNullEmployee() {
-        // Arrange
         InMemoryEmployeeRepository repository = new InMemoryEmployeeRepository();
 
-        // Act + Assert
         assertThrows(NullPointerException.class, () -> repository.save(null));
     }
 
     @Test
     void shouldThrowExceptionWhenFindingByNullName() {
-        // Arrange
         InMemoryEmployeeRepository repository = new InMemoryEmployeeRepository();
 
-        // Act + Assert
         assertThrows(NullPointerException.class, () -> repository.findByName(null));
     }
 
     @Test
     void shouldThrowExceptionWhenCheckingExistenceByNullName() {
-        // Arrange
         InMemoryEmployeeRepository repository = new InMemoryEmployeeRepository();
 
-        // Act + Assert
         assertThrows(NullPointerException.class, () -> repository.existsByName(null));
     }
 
     @Test
     void shouldThrowExceptionWhenFindingByBlankName() {
-        // Arrange
         InMemoryEmployeeRepository repository = new InMemoryEmployeeRepository();
 
-        // Act + Assert
         assertThrows(IllegalArgumentException.class, () -> repository.findByName("   "));
     }
 
     @Test
     void shouldThrowExceptionWhenCheckingExistenceByBlankName() {
-        // Arrange
         InMemoryEmployeeRepository repository = new InMemoryEmployeeRepository();
 
-        // Act + Assert
         assertThrows(IllegalArgumentException.class, () -> repository.existsByName("   "));
     }
 }

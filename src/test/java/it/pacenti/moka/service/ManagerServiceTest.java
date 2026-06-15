@@ -49,7 +49,7 @@ class ManagerServiceTest {
     @Test
     void shouldCreateEmployeeAndPersistIt() {
         Employee employee = managerService.createEmployee(
-                "Mario Rossi",
+                "Employee Test",
                 Priority.MEDIUM,
                 40,
                 12
@@ -57,34 +57,34 @@ class ManagerServiceTest {
 
         assertAll(
                 () -> assertNotNull(employee),
-                () -> assertEquals("Mario Rossi", employee.getName()),
+                () -> assertEquals("Employee Test", employee.getName()),
                 () -> assertEquals(Priority.MEDIUM, employee.getPriority()),
                 () -> assertEquals(40, employee.getAgreedHours()),
                 () -> assertEquals(12, employee.getHourlyCost()),
-                () -> assertTrue(employeeRepository.existsByName("Mario Rossi"))
+                () -> assertTrue(employeeRepository.existsByName("Employee Test"))
         );
     }
 
     @Test
     void shouldThrowWhenCreatingDuplicateEmployee() {
-        managerService.createEmployee("Mario Rossi", Priority.MEDIUM, 40, 12);
+        managerService.createEmployee("Employee Test", Priority.MEDIUM, 40, 12);
 
         assertThrows(
                 DuplicateEmployeeException.class,
-                () -> managerService.createEmployee("  Mario Rossi  ", Priority.HIGH, 30, 15)
+                () -> managerService.createEmployee("  Employee Test  ", Priority.HIGH, 30, 15)
         );
     }
 
     @Test
     void shouldFindEmployeeByName() {
         Employee created = managerService.createEmployee(
-                "Anna Bianchi",
+                "Search Employee Test",
                 Priority.HIGH,
                 32,
                 14
         );
 
-        Optional<Employee> found = managerService.findEmployee("  anna bianchi ");
+        Optional<Employee> found = managerService.findEmployee("  search employee test ");
 
         assertTrue(found.isPresent());
         assertEquals(created.getName(), found.get().getName());
@@ -92,15 +92,37 @@ class ManagerServiceTest {
 
     @Test
     void shouldReturnEmptyWhenEmployeeIsNotFound() {
-        Optional<Employee> found = managerService.findEmployee("Ghost");
+        Optional<Employee> found = managerService.findEmployee("Missing Employee Test");
 
         assertTrue(found.isEmpty());
     }
 
     @Test
+    void shouldGetEmployeeByName() {
+        Employee created = managerService.createEmployee(
+                "Search Employee Test",
+                Priority.HIGH,
+                32,
+                14
+        );
+
+        Employee found = managerService.getEmployeeByName(" search employee test ");
+
+        assertEquals(created.getName(), found.getName());
+    }
+
+    @Test
+    void shouldThrowWhenGettingUnknownEmployeeByName() {
+        assertThrows(
+                EmployeeNotFoundException.class,
+                () -> managerService.getEmployeeByName("Missing Employee Test")
+        );
+    }
+
+    @Test
     void shouldReturnAllEmployees() {
-        Employee first = managerService.createEmployee("Mario", Priority.MEDIUM, 40, 12);
-        Employee second = managerService.createEmployee("Luigi", Priority.HIGH, 30, 15);
+        Employee first = managerService.createEmployee("Barista Test", Priority.MEDIUM, 40, 12);
+        Employee second = managerService.createEmployee("Responsabile Test", Priority.HIGH, 30, 15);
 
         List<Employee> employees = managerService.getAllEmployees();
 
@@ -111,19 +133,68 @@ class ManagerServiceTest {
 
     @Test
     void shouldReturnUnmodifiableEmployeesList() {
-        managerService.createEmployee("Mario", Priority.MEDIUM, 40, 12);
+        managerService.createEmployee("Employee Test", Priority.MEDIUM, 40, 12);
 
         List<Employee> employees = managerService.getAllEmployees();
 
-        assertThrows(UnsupportedOperationException.class, () -> employees.add(
-                employeeFactory.createEmployee("Fake", Priority.LOW, 10, 8)
-        ));
+        assertThrows(UnsupportedOperationException.class, () ->
+                employees.add(employeeFactory.createEmployee("Fake Employee Test", Priority.LOW, 10, 8))
+        );
+    }
+
+    @Test
+    void shouldChangeEmployeePriority() {
+        Employee employee = managerService.createEmployee(
+                "Priority Employee Test",
+                Priority.MEDIUM,
+                40,
+                12
+        );
+
+        managerService.changeEmployeePriority(" priority employee test ", Priority.HIGH);
+
+        assertAll(
+                () -> assertEquals(Priority.HIGH, employee.getPriority()),
+                () -> assertEquals(
+                        Priority.HIGH,
+                        employeeRepository.findByName("Priority Employee Test").orElseThrow().getPriority()
+                )
+        );
+    }
+
+    @Test
+    void shouldThrowWhenChangingPriorityOfUnknownEmployee() {
+        assertThrows(
+                EmployeeNotFoundException.class,
+                () -> managerService.changeEmployeePriority("Missing Employee Test", Priority.HIGH)
+        );
+    }
+
+    @Test
+    void shouldDeleteEmployee() {
+        managerService.createEmployee("Delete Employee Test", Priority.MEDIUM, 40, 12);
+
+        managerService.deleteEmployee(" delete employee test ");
+
+        assertAll(
+                () -> assertTrue(managerService.findEmployee("Delete Employee Test").isEmpty()),
+                () -> assertFalse(employeeRepository.existsByName("Delete Employee Test")),
+                () -> assertTrue(managerService.getAllEmployees().isEmpty())
+        );
+    }
+
+    @Test
+    void shouldThrowWhenDeletingUnknownEmployee() {
+        assertThrows(
+                EmployeeNotFoundException.class,
+                () -> managerService.deleteEmployee("Missing Employee Test")
+        );
     }
 
     @Test
     void shouldCreatePendingLeaveRequestForExistingEmployee() {
         Employee employee = managerService.createEmployee(
-                "Mario Rossi",
+                "Leave Request Employee Test",
                 Priority.MEDIUM,
                 40,
                 12
@@ -158,43 +229,48 @@ class ManagerServiceTest {
 
         assertThrows(
                 EmployeeNotFoundException.class,
-                () -> managerService.createLeaveRequest("Unknown Employee", leave)
+                () -> managerService.createLeaveRequest("Missing Employee Test", leave)
         );
     }
 
     @Test
     void shouldReturnOnlyPendingRequests() {
         Employee employee = managerService.createEmployee(
-                "Mario Rossi",
+                "Pending Request Employee Test",
                 Priority.MEDIUM,
                 40,
                 12
         );
 
-        Leave leave1 = new Leave(
-                LocalDate.of(2026, 5, 1),
-                new TimeRange(LocalTime.of(9, 0), LocalTime.of(12, 0)),
-                LeaveType.VACATION,
-                "Leave 1"
+        LeaveRequest request1 = managerService.createLeaveRequest(
+                employee.getName(),
+                new Leave(
+                        LocalDate.of(2026, 5, 1),
+                        new TimeRange(LocalTime.of(9, 0), LocalTime.of(12, 0)),
+                        LeaveType.VACATION,
+                        "Leave 1"
+                )
         );
 
-        Leave leave2 = new Leave(
-                LocalDate.of(2026, 5, 2),
-                new TimeRange(LocalTime.of(10, 0), LocalTime.of(13, 0)),
-                LeaveType.SICK,
-                "Leave 2"
+        LeaveRequest request2 = managerService.createLeaveRequest(
+                employee.getName(),
+                new Leave(
+                        LocalDate.of(2026, 5, 2),
+                        new TimeRange(LocalTime.of(10, 0), LocalTime.of(13, 0)),
+                        LeaveType.SICK,
+                        "Leave 2"
+                )
         );
 
-        Leave leave3 = new Leave(
-                LocalDate.of(2026, 5, 3),
-                new TimeRange(LocalTime.of(14, 0), LocalTime.of(18, 0)),
-                LeaveType.PERSONAL,
-                "Leave 3"
+        LeaveRequest request3 = managerService.createLeaveRequest(
+                employee.getName(),
+                new Leave(
+                        LocalDate.of(2026, 5, 3),
+                        new TimeRange(LocalTime.of(14, 0), LocalTime.of(18, 0)),
+                        LeaveType.PERSONAL,
+                        "Leave 3"
+                )
         );
-
-        LeaveRequest request1 = managerService.createLeaveRequest(employee.getName(), leave1);
-        LeaveRequest request2 = managerService.createLeaveRequest(employee.getName(), leave2);
-        LeaveRequest request3 = managerService.createLeaveRequest(employee.getName(), leave3);
 
         managerService.approveRequest(request1.getId());
         managerService.rejectRequest(request2.getId());
@@ -210,7 +286,7 @@ class ManagerServiceTest {
     @Test
     void shouldApprovePendingRequestAndPersistApprovedLeave() {
         Employee employee = managerService.createEmployee(
-                "Mario Rossi",
+                "Approved Leave Employee Test",
                 Priority.MEDIUM,
                 40,
                 12
@@ -237,7 +313,7 @@ class ManagerServiceTest {
     @Test
     void shouldRejectPendingRequestWithoutAddingLeaveToEmployee() {
         Employee employee = managerService.createEmployee(
-                "Mario Rossi",
+                "Rejected Leave Employee Test",
                 Priority.MEDIUM,
                 40,
                 12
@@ -280,7 +356,7 @@ class ManagerServiceTest {
     @Test
     void shouldThrowWhenApprovingAlreadyApprovedRequest() {
         Employee employee = managerService.createEmployee(
-                "Mario Rossi",
+                "Already Approved Employee Test",
                 Priority.MEDIUM,
                 40,
                 12
@@ -305,7 +381,7 @@ class ManagerServiceTest {
     @Test
     void shouldThrowWhenRejectingAlreadyRejectedRequest() {
         Employee employee = managerService.createEmployee(
-                "Mario Rossi",
+                "Already Rejected Employee Test",
                 Priority.MEDIUM,
                 40,
                 12
@@ -330,7 +406,7 @@ class ManagerServiceTest {
     @Test
     void shouldThrowWhenRejectingApprovedRequest() {
         Employee employee = managerService.createEmployee(
-                "Mario Rossi",
+                "Approved Then Rejected Employee Test",
                 Priority.MEDIUM,
                 40,
                 12
@@ -355,7 +431,7 @@ class ManagerServiceTest {
     @Test
     void shouldKeepRequestPendingWhenApprovedLeaveConflictsWithExistingLeave() {
         Employee employee = managerService.createEmployee(
-                "Mario Rossi",
+                "Conflicting Leave Employee Test",
                 Priority.MEDIUM,
                 40,
                 12
@@ -367,6 +443,7 @@ class ManagerServiceTest {
                 LeaveType.VACATION,
                 "Existing leave"
         );
+
         employee.addLeave(existingLeave);
         employeeRepository.save(employee);
 
@@ -395,7 +472,7 @@ class ManagerServiceTest {
     @Test
     void shouldGenerateProgressiveIdsForLeaveRequests() {
         Employee employee = managerService.createEmployee(
-                "Mario Rossi",
+                "Progressive Id Employee Test",
                 Priority.MEDIUM,
                 40,
                 12

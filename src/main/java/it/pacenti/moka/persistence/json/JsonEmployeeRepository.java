@@ -2,6 +2,7 @@ package it.pacenti.moka.persistence.json;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import it.pacenti.moka.availability.Leave;
+import it.pacenti.moka.availability.LeaveType;
 import it.pacenti.moka.availability.WeeklyAvailability;
 import it.pacenti.moka.employee.Employee;
 import it.pacenti.moka.employee.EmployeeFactory;
@@ -31,6 +32,10 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 
+/**
+ * JSON-based implementation of EmployeeRepository.
+ * It keeps employees in memory and synchronizes changes to disk.
+ */
 public class JsonEmployeeRepository implements EmployeeRepository {
 
     private final Path filePath;
@@ -77,7 +82,16 @@ public class JsonEmployeeRepository implements EmployeeRepository {
 
     @Override
     public List<Employee> findAll() {
-        return new ArrayList<>(employeesByName.values());
+        return List.copyOf(employeesByName.values());
+    }
+
+    @Override
+    public void deleteByName(String name) {
+        Objects.requireNonNull(name, "Name cannot be null");
+
+        String normalizedName = normalizeName(name);
+        employeesByName.remove(normalizedName);
+        flushToDisk();
     }
 
     private void loadFromDisk() {
@@ -306,7 +320,7 @@ public class JsonEmployeeRepository implements EmployeeRepository {
             Leave leave = new Leave(
                     date,
                     range,
-                    it.pacenti.moka.availability.LeaveType.valueOf(leaveData.getType()),
+                    LeaveType.valueOf(leaveData.getType()),
                     leaveData.getNote()
             );
 
@@ -335,6 +349,13 @@ public class JsonEmployeeRepository implements EmployeeRepository {
     }
 
     private String normalizeName(String name) {
-        return name.trim().toLowerCase();
+        Objects.requireNonNull(name, "Name cannot be null");
+
+        String normalized = name.trim().toLowerCase();
+        if (normalized.isBlank()) {
+            throw new IllegalArgumentException("Name cannot be blank");
+        }
+
+        return normalized;
     }
 }

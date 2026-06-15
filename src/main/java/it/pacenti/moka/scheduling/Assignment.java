@@ -32,7 +32,7 @@ public class Assignment {
     public String toString() {
         return "Assignment{" +
                 "slot=" + slot +
-                ", employee" + employee +
+                ", employee=" + employee +
                 "}";
     }
 }

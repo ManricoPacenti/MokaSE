@@ -5,6 +5,7 @@ import it.pacenti.moka.availability.LeaveRequest;
 import it.pacenti.moka.availability.LeaveType;
 import it.pacenti.moka.availability.RequestStatus;
 import it.pacenti.moka.employee.Employee;
+import it.pacenti.moka.persistence.json.JsonPersistenceException;
 import it.pacenti.moka.persistence.json.model.LeaveData;
 import it.pacenti.moka.persistence.json.model.LeaveRequestData;
 import it.pacenti.moka.repository.EmployeeRepository;
@@ -14,6 +15,10 @@ import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.Objects;
 
+/**
+ * Converts LeaveRequest domain objects
+ * to JSON persistence DTOs and vice versa.
+ */
 public class LeaveRequestJsonMapper {
 
     public LeaveRequestData toData(LeaveRequest request) {
@@ -41,7 +46,7 @@ public class LeaveRequestJsonMapper {
         Objects.requireNonNull(employeeRepository, "EmployeeRepository cannot be null");
 
         Employee employee = employeeRepository.findByName(data.getEmployeeName())
-                .orElseThrow(() -> new IllegalStateException(
+                .orElseThrow(() -> new JsonPersistenceException(
                         "Cannot reconstruct LeaveRequest: employee not found: " + data.getEmployeeName()
                 ));
 
