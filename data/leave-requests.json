@@ -1,0 +1,157 @@
+{
+  "requests" : [ {
+    "id" : 1,
+    "employeeName" : "Francesco",
+    "leave" : {
+      "date" : "2026-04-04",
+      "type" : "VACATION",
+      "start" : "00:00",
+      "end" : "23:59",
+      "note" : ""
+    },
+    "status" : "APPROVED"
+  }, {
+    "id" : 2,
+    "employeeName" : "Monica",
+    "leave" : {
+      "date" : "2026-04-05",
+      "type" : "PERSONAL",
+      "start" : "00:00",
+      "end" : "23:59",
+      "note" : "tvb"
+    },
+    "status" : "APPROVED"
+  }, {
+    "id" : 3,
+    "employeeName" : "Lorenzo",
+    "leave" : {
+      "date" : "2026-04-14",
+      "type" : "VACATION",
+      "start" : "00:00",
+      "end" : "23:59",
+      "note" : ""
+    },
+    "status" : "APPROVED"
+  }, {
+    "id" : 4,
+    "employeeName" : "Serena",
+    "leave" : {
+      "date" : "2026-04-14",
+      "type" : "VACATION",
+      "start" : "17:00",
+      "end" : "00:00",
+      "note" : ""
+    },
+    "status" : "APPROVED"
+  }, {
+    "id" : 5,
+    "employeeName" : "Zahra",
+    "leave" : {
+      "date" : "2026-04-14",
+      "type" : "VACATION",
+      "start" : "00:00",
+      "end" : "23:59",
+      "note" : ""
+    },
+    "status" : "APPROVED"
+  }, {
+    "id" : 6,
+    "employeeName" : "Monica",
+    "leave" : {
+      "date" : "2026-04-15",
+      "type" : "VACATION",
+      "start" : "00:00",
+      "end" : "23:59",
+      "note" : ""
+    },
+    "status" : "APPROVED"
+  }, {
+    "id" : 7,
+    "employeeName" : "Serena",
+    "leave" : {
+      "date" : "2026-04-15",
+      "type" : "VACATION",
+      "start" : "11:00",
+      "end" : "16:00",
+      "note" : ""
+    },
+    "status" : "APPROVED"
+  }, {
+    "id" : 8,
+    "employeeName" : "Lorenzo",
+    "leave" : {
+      "date" : "2026-04-15",
+      "type" : "OTHER",
+      "start" : "00:00",
+      "end" : "23:59",
+      "note" : ""
+    },
+    "status" : "APPROVED"
+  }, {
+    "id" : 9,
+    "employeeName" : "Lorenzo",
+    "leave" : {
+      "date" : "2026-04-16",
+      "type" : "PERSONAL",
+      "start" : "00:00",
+      "end" : "23:59",
+      "note" : ""
+    },
+    "status" : "APPROVED"
+  }, {
+    "id" : 10,
+    "employeeName" : "Zahra",
+    "leave" : {
+      "date" : "1016-04-16",
+      "type" : "PERSONAL",
+      "start" : "00:00",
+      "end" : "23:59",
+      "note" : ""
+    },
+    "status" : "APPROVED"
+  }, {
+    "id" : 11,
+    "employeeName" : "Lorenzo",
+    "leave" : {
+      "date" : "2026-04-17",
+      "type" : "PERSONAL",
+      "start" : "00:00",
+      "end" : "23:59",
+      "note" : ""
+    },
+    "status" : "APPROVED"
+  }, {
+    "id" : 12,
+    "employeeName" : "Zahra",
+    "leave" : {
+      "date" : "2026-04-17",
+      "type" : "OTHER",
+      "start" : "00:00",
+      "end" : "23:59",
+      "note" : ""
+    },
+    "status" : "APPROVED"
+  }, {
+    "id" : 13,
+    "employeeName" : "Serena",
+    "leave" : {
+      "date" : "2026-04-17",
+      "type" : "PERSONAL",
+      "start" : "16:00",
+      "end" : "19:00",
+      "note" : ""
+    },
+    "status" : "APPROVED"
+  }, {
+    "id" : 14,
+    "employeeName" : "Zahra",
+    "leave" : {
+      "date" : "2026-04-18",
+      "type" : "SICK",
+      "start" : "00:00",
+      "end" : "23:59",
+      "note" : ""
+    },
+    "status" : "APPROVED"
+  } ]
+}
