@@ -206,3 +206,8 @@ and separation of responsibilities.
     Collections are extensively traversed during scheduling operations, persistence activities, reporting, and repository management.
     The project leverages the standard Java Collections Framework and its iteration mechanisms to process employee data, 
     schedule slots, leave requests, and other domain entities in a consistent and maintainable way.
+
+# New Implementations:
+
+https://github.com/ManricoPacenti/MokaWeb
+https://github.com/ManricoPacenti/MokaWeb-Frontend
