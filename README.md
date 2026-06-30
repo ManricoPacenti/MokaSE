@@ -37,12 +37,12 @@ The application follows a modular architecture in which responsibilities are sep
 
 The main functional areas are:
 
-Employee Management
-Leave Management
-Schedule Templates
-Schedule Generation
-Persistence
-Console User Interface
+Employee Management;
+Leave Management;
+Schedule Templates;
+Schedule Generation;
+Persistence;
+Console User Interface;
 
 Each area focuses on a specific responsibility and interacts with the others through well-defined boundaries. 
 This separation allows business rules to remain independent from both presentation logic and persistence concerns, 
